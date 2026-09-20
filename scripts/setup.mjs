@@ -23,13 +23,13 @@ function runWrangler(args, options = {}) {
   if (result.status !== 0) throw new Error(`命令执行失败：wrangler ${args.join(" ")}`);
 }
 
-function cronForBeijing(time) {
+function normalizeBeijingTime(time) {
   const match = /^(\d{1,2}):(\d{2})$/u.exec(time);
   if (!match) throw new Error("时间格式必须是 HH:MM，例如 08:10");
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   if (hour > 23 || minute > 59) throw new Error("请输入有效的北京时间");
-  return `${minute} ${(hour - 8 + 24) % 24} * * *`;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 if (existsSync(installMarker)) {
@@ -42,10 +42,10 @@ try {
   console.log("\nWorkBuddy 自动签到 · Cloudflare 安装向导\n");
   const envPassword = process.env.SETUP_ADMIN_PASSWORD;
   const adminPassword = envPassword ?? (await rl.question("设置管理密码（至少 12 位，输入会显示）："));
-  if (adminPassword.length < 12) throw new Error("管理密码至少需要 12 位");
+  if (adminPassword.length < 12 || adminPassword.length > 256) throw new Error("管理密码需要 12 至 256 位");
   if (!existsSync(deployConfig)) {
     const timeInput = process.env.SETUP_BEIJING_TIME ?? (await rl.question("每天几点签到（北京时间，默认 08:10）："));
-    const time = timeInput || "08:10";
+    const time = normalizeBeijingTime(timeInput || "08:10");
     const workerNameInput = process.env.SETUP_WORKER_NAME ?? (await rl.question("Worker 名称（默认 workbuddy-auto-checkin）："));
     const workerName = workerNameInput || "workbuddy-auto-checkin";
     if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u.test(workerName)) {
@@ -57,8 +57,7 @@ try {
     const config = JSON.parse(readFileSync(deployConfig, "utf8"));
     config.name = workerName;
     config.d1_databases[0].database_name = `${workerName}-db`;
-    config.triggers.crons = [cronForBeijing(time)];
-    config.vars.SCHEDULE_LABEL = `每天 ${time.padStart(5, "0")}（北京时间）`;
+    config.vars.DEFAULT_CHECKIN_TIME = time;
     writeFileSync(deployConfig, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   } else {
     console.log("检测到未完成的安装，将从现有部署配置继续。\n");
@@ -70,6 +69,8 @@ try {
   deploySettings.main = "../src/index.ts";
   deploySettings.d1_databases[0].migrations_dir = "../migrations";
   deploySettings.assets.directory = "../public";
+  deploySettings.triggers.crons = ["*/5 * * * *"];
+  deploySettings.vars.DEFAULT_CHECKIN_TIME ??= "08:10";
   writeFileSync(deployConfig, `${JSON.stringify(deploySettings, null, 2)}\n`, "utf8");
 
   console.log("\n1/5 检查 Cloudflare 登录状态…");
@@ -81,6 +82,17 @@ try {
 
   console.log("\n3/5 初始化数据库…");
   runWrangler(["d1", "migrations", "apply", "DB", "--remote", "--config", deployConfig]);
+  const initialTime = JSON.parse(readFileSync(deployConfig, "utf8")).vars.DEFAULT_CHECKIN_TIME;
+  runWrangler([
+    "d1",
+    "execute",
+    "DB",
+    "--remote",
+    "--config",
+    deployConfig,
+    "--command",
+    `UPDATE app_settings SET checkin_time = '${initialTime}', updated_at = ${Date.now()} WHERE id = 1`,
+  ]);
 
   console.log("\n4/5 写入加密密钥…");
   const sessionSecret = randomBytes(32).toString("base64");

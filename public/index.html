@@ -42,6 +42,7 @@
         </a>
         <div class="topbar-actions">
           <span id="schedule-chip" class="schedule-chip"></span>
+          <button id="settings-button" class="button button-ghost" type="button">设置</button>
           <button id="logout-button" class="button button-ghost" type="button">退出</button>
         </div>
       </header>
@@ -82,9 +83,9 @@
 
         <section class="section-block" aria-labelledby="logs-heading">
           <div class="section-heading"><div><h2 id="logs-heading">最近记录</h2><p class="muted">保留最近 30 天的签到结果。</p></div></div>
-          <div class="table-wrap">
+          <div class="table-wrap" role="region" tabindex="0" aria-label="签到记录表，可横向滚动">
             <table>
-              <thead><tr><th>账号</th><th>日期</th><th>结果</th><th>说明</th><th>时间</th></tr></thead>
+              <thead><tr><th scope="col">账号</th><th scope="col">日期</th><th scope="col">结果</th><th scope="col">说明</th><th scope="col">时间</th></tr></thead>
               <tbody id="logs-body"></tbody>
             </table>
             <div id="logs-empty" class="table-empty">暂无签到记录</div>
@@ -105,6 +106,44 @@
         </div>
         <div id="qr-status" class="qr-status"><span class="pulse"></span><span>正在生成安全登录二维码…</span></div>
         <a id="qr-link" class="text-link" href="#" target="_blank" rel="noopener noreferrer" hidden>二维码无法识别？在新窗口打开</a>
+      </div>
+    </dialog>
+
+    <dialog id="settings-dialog" class="dialog settings-dialog">
+      <form method="dialog"><button class="dialog-close" aria-label="关闭设置">×</button></form>
+      <div class="dialog-content settings-content">
+        <p class="eyebrow">SETTINGS</p>
+        <h2>系统设置</h2>
+        <p class="muted settings-intro">修改自动签到时间或管理后台密码。</p>
+
+        <section class="settings-card" aria-labelledby="schedule-settings-title">
+          <div>
+            <h3 id="schedule-settings-title">自动签到时间</h3>
+            <p class="muted">按北京时间执行，实际触发可能晚几分钟。</p>
+          </div>
+          <form id="schedule-form" class="settings-form settings-form-inline">
+            <label for="checkin-time">签到时间</label>
+            <input id="checkin-time" name="checkinTime" type="time" step="60" required />
+            <button id="save-schedule-button" class="button button-primary" type="submit">保存时间</button>
+          </form>
+        </section>
+
+        <section class="settings-card" aria-labelledby="password-settings-title">
+          <div>
+            <h3 id="password-settings-title">修改管理密码</h3>
+            <p class="muted">修改后其他已登录设备会自动退出。</p>
+          </div>
+          <form id="password-form" class="settings-form">
+            <label for="current-password">当前密码</label>
+            <input id="current-password" type="password" autocomplete="current-password" required />
+            <label for="new-password">新密码</label>
+            <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+            <label for="confirm-password">确认新密码</label>
+            <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+            <p id="password-error" class="form-error" role="alert" hidden></p>
+            <button id="save-password-button" class="button button-primary" type="submit">修改密码</button>
+          </form>
+        </section>
       </div>
     </dialog>
 

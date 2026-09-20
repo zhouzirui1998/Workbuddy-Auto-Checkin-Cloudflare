@@ -3,6 +3,7 @@ const $ = (selector) => document.querySelector(selector);
 const state = {
   accounts: [],
   logs: [],
+  checkinTime: "08:10",
   qrPollTimer: null,
   toastTimer: null,
 };
@@ -41,6 +42,7 @@ function toast(message, type = "success") {
 function showLogin() {
   stopQrPolling();
   if ($("#qr-dialog").open) $("#qr-dialog").close();
+  if ($("#settings-dialog").open) $("#settings-dialog").close();
   views.app.hidden = true;
   views.login.hidden = false;
   requestAnimationFrame(() => $("#password").focus());
@@ -159,6 +161,7 @@ async function loadDashboard({ quiet = false } = {}) {
     const data = await api("/api/dashboard");
     state.accounts = data.accounts;
     state.logs = data.logs;
+    state.checkinTime = data.checkinTime;
     $("#schedule-chip").textContent = data.scheduleLabel;
     renderAccounts();
     renderLogs();
@@ -167,6 +170,62 @@ async function loadDashboard({ quiet = false } = {}) {
     toast(error.message, "error");
   } finally {
     if (!quiet) setButtonLoading(refresh, false, "刷新中…");
+  }
+}
+
+function openSettingsDialog() {
+  $("#checkin-time").value = state.checkinTime;
+  $("#password-form").reset();
+  $("#password-error").hidden = true;
+  $("#settings-dialog").showModal();
+}
+
+async function saveSchedule(event) {
+  event.preventDefault();
+  const button = $("#save-schedule-button");
+  const checkinTime = $("#checkin-time").value;
+  setButtonLoading(button, true, "保存中…");
+  try {
+    const data = await api("/api/settings/schedule", {
+      method: "PATCH",
+      body: JSON.stringify({ checkinTime }),
+    });
+    state.checkinTime = data.checkinTime;
+    $("#schedule-chip").textContent = data.scheduleLabel;
+    toast("自动签到时间已更新");
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    setButtonLoading(button, false, "保存中…");
+  }
+}
+
+async function savePassword(event) {
+  event.preventDefault();
+  const button = $("#save-password-button");
+  const errorNode = $("#password-error");
+  const currentPassword = $("#current-password").value;
+  const newPassword = $("#new-password").value;
+  const confirmation = $("#confirm-password").value;
+  errorNode.hidden = true;
+  if (newPassword !== confirmation) {
+    errorNode.textContent = "两次输入的新密码不一致";
+    errorNode.hidden = false;
+    return;
+  }
+  setButtonLoading(button, true, "修改中…");
+  try {
+    await api("/api/settings/password", {
+      method: "PATCH",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    $("#password-form").reset();
+    toast("管理密码已修改，其他设备的登录已失效");
+  } catch (error) {
+    errorNode.textContent = error.message;
+    errorNode.hidden = false;
+  } finally {
+    setButtonLoading(button, false, "修改中…");
   }
 }
 
@@ -312,6 +371,9 @@ $("#logout-button").addEventListener("click", async () => {
 });
 $("#refresh-button").addEventListener("click", () => loadDashboard());
 $("#checkin-all-button").addEventListener("click", checkinAll);
+$("#settings-button").addEventListener("click", openSettingsDialog);
+$("#schedule-form").addEventListener("submit", saveSchedule);
+$("#password-form").addEventListener("submit", savePassword);
 $("#add-account-button").addEventListener("click", openQrDialog);
 $("#empty-add-button").addEventListener("click", openQrDialog);
 $("#qr-dialog").addEventListener("close", stopQrPolling);

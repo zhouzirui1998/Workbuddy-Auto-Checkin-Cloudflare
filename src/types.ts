@@ -73,6 +73,20 @@ export interface CheckinResult {
   message: string;
 }
 
+export interface AppSettingsRow {
+  id: number;
+  checkin_time: string;
+  last_scheduled_date: string | null;
+  scheduled_lock_until: number | null;
+  updated_at: number;
+}
+
+export interface PublicSettings {
+  checkinTime: string;
+  timeZone: string;
+  scheduleLabel: string;
+}
+
 export interface OAuthSessionRow {
   id: string;
   payload_ciphertext: string;

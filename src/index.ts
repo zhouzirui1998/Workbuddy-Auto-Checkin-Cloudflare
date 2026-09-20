@@ -1,48 +1,62 @@
 import QRCode from "qrcode";
 import {
+  authenticateAdminPassword,
   assertLoginAllowed,
+  changeAdminPassword,
   clearLoginFailures,
   clearSessionCookie,
   createSessionCookie,
   isAuthenticated,
   recordLoginFailure,
   requireAuthentication,
-  verifyPassword,
 } from "./auth";
 import { checkinAccount, checkinAllAccounts } from "./checkin";
 import { apiError, applyAssetSecurityHeaders, HttpError, json, readJsonObject, requireSameOrigin } from "./http";
 import { completeLoginRequest, createLoginRequest } from "./oauth";
 import {
   cleanupExpiredData,
+  claimScheduledRun,
   deleteAccount,
+  finishScheduledRun,
+  getAppSettings,
   getOAuthSession,
   listAccounts,
   listRecentLogs,
   setAccountEnabled,
   toPublicAccount,
+  updateCheckinTime,
 } from "./repository";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
+const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
   requireSameOrigin(request);
   const key = await assertLoginAllowed(request, env.DB);
   const body = await readJsonObject(request);
   const password = typeof body.password === "string" ? body.password : "";
-  if (!(await verifyPassword(password, env.ADMIN_PASSWORD))) {
+  const authentication = await authenticateAdminPassword(env.DB, password, env.ADMIN_PASSWORD);
+  if (!authentication.valid) {
     await recordLoginFailure(env.DB, key);
     throw new HttpError(401, "管理密码不正确");
   }
   await clearLoginFailures(env.DB, key);
-  return json({ ok: true }, 200, { "Set-Cookie": await createSessionCookie(env.SESSION_SECRET) });
+  return json(
+    { ok: true },
+    200,
+    { "Set-Cookie": await createSessionCookie(env.SESSION_SECRET, authentication.sessionVersion) },
+  );
 }
 
 async function handleDashboard(env: Env): Promise<Response> {
-  const [accountRows, logs] = await Promise.all([listAccounts(env.DB), listRecentLogs(env.DB)]);
+  const [accountRows, logs, settings] = await Promise.all([
+    listAccounts(env.DB),
+    listRecentLogs(env.DB),
+    getAppSettings(env.DB, env.APP_TIMEZONE, env.DEFAULT_CHECKIN_TIME),
+  ]);
   return json({
     ok: true,
-    scheduleLabel: env.SCHEDULE_LABEL,
-    timeZone: env.APP_TIMEZONE,
+    ...settings,
     accounts: accountRows.map(toPublicAccount),
     logs: logs.map((log) => ({
       id: log.id,
@@ -64,7 +78,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     return json({ ok: true, service: "workbuddy-auto-checkin", version: VERSION });
   }
   if (pathname === "/api/auth/session" && request.method === "GET") {
-    return json({ ok: true, authenticated: await isAuthenticated(request, env.SESSION_SECRET) });
+    return json({ ok: true, authenticated: await isAuthenticated(request, env.SESSION_SECRET, env.DB) });
   }
   if (pathname === "/api/auth/login" && request.method === "POST") return handleLogin(request, env);
   if (pathname === "/api/auth/logout" && request.method === "POST") {
@@ -72,10 +86,33 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie() });
   }
 
-  await requireAuthentication(request, env.SESSION_SECRET);
+  await requireAuthentication(request, env.SESSION_SECRET, env.DB);
   if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method)) requireSameOrigin(request);
 
   if (pathname === "/api/dashboard" && request.method === "GET") return handleDashboard(env);
+  if (pathname === "/api/settings/schedule" && request.method === "PATCH") {
+    const body = await readJsonObject(request);
+    const checkinTime = typeof body.checkinTime === "string" ? body.checkinTime : "";
+    if (!TIME_PATTERN.test(checkinTime)) throw new HttpError(400, "请输入有效的签到时间");
+    await updateCheckinTime(env.DB, checkinTime);
+    return json({ ok: true, checkinTime, scheduleLabel: `每天 ${checkinTime}（北京时间）` });
+  }
+  if (pathname === "/api/settings/password" && request.method === "PATCH") {
+    const body = await readJsonObject(request);
+    const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+    const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+    if (newPassword.length < 12 || newPassword.length > 256) {
+      throw new HttpError(400, "新密码需要 12 至 256 位");
+    }
+    if (currentPassword === newPassword) throw new HttpError(400, "新密码不能与当前密码相同");
+    const result = await changeAdminPassword(env.DB, currentPassword, newPassword, env.ADMIN_PASSWORD);
+    if (!result.changed) throw new HttpError(400, "当前密码不正确");
+    return json(
+      { ok: true },
+      200,
+      { "Set-Cookie": await createSessionCookie(env.SESSION_SECRET, result.sessionVersion) },
+    );
+  }
   if (pathname === "/api/oauth/start" && request.method === "POST") {
     const result = await createLoginRequest(env);
     return json({ ok: true, sessionId: result.id, authUrl: result.authUrl, expiresAt: result.expiresAt });
@@ -135,19 +172,27 @@ async function fetchHandler(request: Request, env: Env): Promise<Response> {
   }
 }
 
-async function scheduledHandler(env: Env): Promise<void> {
-  console.log("scheduled_checkin_started", { schedule: env.SCHEDULE_LABEL });
-  const results = await checkinAllAccounts(env);
-  await cleanupExpiredData(env.DB);
-  console.log("scheduled_checkin_finished", {
-    total: results.length,
-    success: results.filter((result) => result.status === "success" || result.status === "already").length,
-  });
+async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> {
+  const claim = await claimScheduledRun(env.DB, env.APP_TIMEZONE, env.DEFAULT_CHECKIN_TIME, scheduledTime);
+  if (!claim.claimed) return;
+  console.log("scheduled_checkin_started", { checkinTime: claim.checkinTime, localDate: claim.localDate });
+  try {
+    const results = await checkinAllAccounts(env);
+    await cleanupExpiredData(env.DB);
+    await finishScheduledRun(env.DB, claim.localDate, true);
+    console.log("scheduled_checkin_finished", {
+      total: results.length,
+      success: results.filter((result) => result.status === "success" || result.status === "already").length,
+    });
+  } catch (error) {
+    await finishScheduledRun(env.DB, claim.localDate, false);
+    throw error;
+  }
 }
 
 export default {
   fetch: fetchHandler,
-  scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext): void {
-    context.waitUntil(scheduledHandler(env));
+  scheduled(controller: ScheduledController, env: Env, context: ExecutionContext): void {
+    context.waitUntil(scheduledHandler(env, controller.scheduledTime));
   },
 } satisfies ExportedHandler<Env>;

@@ -27,6 +27,10 @@ export function decodeBase64Url(value: string): Uint8Array {
   return decodeBase64(value);
 }
 
+export function randomBase64(byteLength: number): string {
+  return encodeBase64(crypto.getRandomValues(new Uint8Array(byteLength)));
+}
+
 async function importAesKey(secret: string): Promise<CryptoKey> {
   const bytes = decodeBase64(secret);
   if (bytes.byteLength !== 32) throw new Error("TOKEN_ENCRYPTION_KEY 必须是 32 字节 Base64 值");
@@ -64,6 +68,24 @@ export async function signText(value: string, secret: string): Promise<Uint8Arra
 
 export async function sha256(value: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value)));
+}
+
+export async function derivePasswordHash(password: string, salt: string, iterations: number): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey("raw", toArrayBuffer(encoder.encode(password)), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt: toArrayBuffer(decodeBase64(salt)), iterations },
+    key,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+export function bytesToBase64(value: Uint8Array): string {
+  return encodeBase64(value);
+}
+
+export function base64ToBytes(value: string): Uint8Array {
+  return decodeBase64(value);
 }
 
 export function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {

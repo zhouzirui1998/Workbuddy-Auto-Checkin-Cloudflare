@@ -31,7 +31,39 @@ describe("Worker API", () => {
       new Request(`${ORIGIN}/api/dashboard`, { headers: { Cookie: cookie ?? "" } }),
     );
     expect(dashboard.status).toBe(200);
-    await expect(dashboard.json()).resolves.toMatchObject({ ok: true, accounts: [], logs: [] });
+    await expect(dashboard.json()).resolves.toMatchObject({
+      ok: true,
+      accounts: [],
+      logs: [],
+      checkinTime: "08:10",
+      timeZone: "Asia/Shanghai",
+    });
+  });
+
+  it("updates the automatic check-in time for an authenticated administrator", async () => {
+    const login = await exports.default.fetch(
+      new Request(`${ORIGIN}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: ORIGIN },
+        body: JSON.stringify({ password: "local-development-password" }),
+      }),
+    );
+    const cookie = login.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+
+    const update = await exports.default.fetch(
+      new Request(`${ORIGIN}/api/settings/schedule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Cookie: cookie, Origin: ORIGIN },
+        body: JSON.stringify({ checkinTime: "07:35" }),
+      }),
+    );
+    expect(update.status).toBe(200);
+    await expect(update.json()).resolves.toMatchObject({ ok: true, checkinTime: "07:35" });
+
+    const dashboard = await exports.default.fetch(
+      new Request(`${ORIGIN}/api/dashboard`, { headers: { Cookie: cookie } }),
+    );
+    await expect(dashboard.json()).resolves.toMatchObject({ checkinTime: "07:35" });
   });
 
   it("rejects a cross-origin login request", async () => {

@@ -3,11 +3,13 @@ import { HttpError } from "./http";
 import type {
   AccountProfile,
   AccountRow,
+  AppSettingsRow,
   CheckinLogRow,
   CredentialPayload,
   OAuthPayload,
   OAuthSessionRow,
   PublicAccount,
+  PublicSettings,
 } from "./types";
 
 function isCredentialPayload(value: unknown): value is CredentialPayload {
@@ -230,4 +232,85 @@ export async function cleanupExpiredData(database: D1Database): Promise<void> {
       .prepare("DELETE FROM login_rate_limits WHERE window_started_at < ? AND (blocked_until IS NULL OR blocked_until < ?)")
       .bind(Math.floor(now / 1000) - 24 * 60 * 60, Math.floor(now / 1000)),
   ]);
+}
+
+export async function getAppSettings(
+  database: D1Database,
+  timeZone: string,
+  defaultCheckinTime: string,
+): Promise<PublicSettings> {
+  await database
+    .prepare("INSERT OR IGNORE INTO app_settings (id, checkin_time, updated_at) VALUES (1, ?, ?)")
+    .bind(defaultCheckinTime, Date.now())
+    .run();
+  const row = await database.prepare("SELECT * FROM app_settings WHERE id = 1").first<AppSettingsRow>();
+  if (!row) throw new Error("app_settings_missing");
+  return {
+    checkinTime: row.checkin_time,
+    timeZone,
+    scheduleLabel: `每天 ${row.checkin_time}（北京时间）`,
+  };
+}
+
+export async function updateCheckinTime(database: D1Database, checkinTime: string): Promise<void> {
+  await database
+    .prepare("UPDATE app_settings SET checkin_time = ?, updated_at = ? WHERE id = 1")
+    .bind(checkinTime, Date.now())
+    .run();
+}
+
+function localDateAndTime(timestamp: number, timeZone: string): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(timestamp));
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  return {
+    date: `${values.get("year") ?? ""}-${values.get("month") ?? ""}-${values.get("day") ?? ""}`,
+    time: `${values.get("hour") ?? ""}:${values.get("minute") ?? ""}`,
+  };
+}
+
+export async function claimScheduledRun(
+  database: D1Database,
+  timeZone: string,
+  defaultCheckinTime: string,
+  timestamp: number,
+): Promise<{ claimed: boolean; localDate: string; checkinTime: string }> {
+  const settings = await getAppSettings(database, timeZone, defaultCheckinTime);
+  const local = localDateAndTime(timestamp, timeZone);
+  if (local.time < settings.checkinTime) {
+    return { claimed: false, localDate: local.date, checkinTime: settings.checkinTime };
+  }
+  const now = Date.now();
+  const result = await database
+    .prepare(
+      "UPDATE app_settings SET scheduled_lock_until = ?, updated_at = ? WHERE id = 1 AND checkin_time = ? " +
+        "AND (last_scheduled_date IS NULL OR last_scheduled_date <> ?) " +
+        "AND (scheduled_lock_until IS NULL OR scheduled_lock_until < ?)",
+    )
+    .bind(now + 30 * 60 * 1000, now, settings.checkinTime, local.date, now)
+    .run();
+  return { claimed: result.meta.changes === 1, localDate: local.date, checkinTime: settings.checkinTime };
+}
+
+export async function finishScheduledRun(database: D1Database, localDate: string, succeeded: boolean): Promise<void> {
+  if (succeeded) {
+    await database
+      .prepare(
+        "UPDATE app_settings SET last_scheduled_date = ?, scheduled_lock_until = NULL, updated_at = ? WHERE id = 1",
+      )
+      .bind(localDate, Date.now())
+      .run();
+    return;
+  }
+  await database
+    .prepare("UPDATE app_settings SET scheduled_lock_until = NULL, updated_at = ? WHERE id = 1")
+    .bind(Date.now())
+    .run();
 }

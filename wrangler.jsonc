@@ -13,7 +13,7 @@
   "vars": {
     "APP_ENVIRONMENT": "production",
     "APP_TIMEZONE": "Asia/Shanghai",
-    "SCHEDULE_LABEL": "每天 08:10（北京时间）"
+    "DEFAULT_CHECKIN_TIME": "08:10"
   },
   "d1_databases": [
     {
@@ -28,6 +28,6 @@
     "run_worker_first": true
   },
   "triggers": {
-    "crons": ["10 0 * * *"]
+    "crons": ["*/5 * * * *"]
   }
 }

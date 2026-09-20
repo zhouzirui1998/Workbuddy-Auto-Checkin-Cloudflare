@@ -1,6 +1,6 @@
 {
   "name": "workbuddy-auto-checkin",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "可自托管的 WorkBuddy 多账号自动签到 Cloudflare Worker",
   "type": "module",
@@ -14,7 +14,8 @@
     "test": "vitest run",
     "check": "npm run types:check && npm run typecheck && npm run lint && npm test && wrangler deploy --dry-run",
     "setup:cloudflare": "node scripts/setup.mjs",
-    "update:cloudflare": "node scripts/update.mjs"
+    "update:cloudflare": "node scripts/update.mjs",
+    "reset-password": "node scripts/reset-password.mjs"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
