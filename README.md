@@ -40,7 +40,7 @@ npm run setup:cloudflare
 - 每日签到时间（北京时间，默认 `08:10`）
 - Worker 名称（默认 `workbuddy-auto-checkin`）
 
-首次运行时会打开 Cloudflare 授权页，并自动完成 Worker、D1、数据表、定时任务和三个 Secret 的配置。完成后，打开终端显示的 `workers.dev` 地址即可使用。
+首次运行时会打开 Cloudflare 授权页，并自动完成 Worker、D1、数据表、定时任务和三个 Secret 的配置。最后发布完成后，脚本会自动识别 `workers.dev` 地址并尝试打开默认浏览器，使用刚设置的管理密码登录；如果系统阻止自动打开，终端会保留可复制的网址和提示。
 
 ### 发给别人时，密码怎么设？
 

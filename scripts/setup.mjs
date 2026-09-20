@@ -23,6 +23,29 @@ function runWrangler(args, options = {}) {
   if (result.status !== 0) throw new Error(`命令执行失败：wrangler ${args.join(" ")}`);
 }
 
+function runWranglerCapture(args) {
+  const result = spawnSync(process.execPath, [wranglerCli, ...args], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["inherit", "pipe", "pipe"],
+  });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  process.stdout.write(output);
+  if (result.status !== 0) throw new Error(`命令执行失败：wrangler ${args.join(" ")}`);
+  return output;
+}
+
+function extractWorkersDevUrl(output) {
+  return output.match(/https:\/\/[^\s]+\.workers\.dev/iu)?.[0]?.replace(/[),.]+$/u, "") ?? null;
+}
+
+function openBrowser(url) {
+  const command = process.platform === "win32" ? "cmd.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const result = spawnSync(command, args, { stdio: "ignore", windowsHide: true });
+  return result.status === 0;
+}
+
 function normalizeBeijingTime(time) {
   const match = /^(\d{1,2}):(\d{2})$/u.exec(time);
   if (!match) throw new Error("时间格式必须是 HH:MM，例如 08:10");
@@ -105,8 +128,20 @@ try {
   writeFileSync(installMarker, `${new Date().toISOString()}\n`, "utf8");
 
   console.log("\n5/5 发布完整版本…");
-  runWrangler(["deploy", "--config", deployConfig]);
-  console.log("\n安装完成。请打开上方 workers.dev 地址，用刚才设置的管理密码登录。\n");
+  const deployOutput = runWranglerCapture(["deploy", "--config", deployConfig]);
+  const workerUrl = extractWorkersDevUrl(deployOutput);
+  console.log("\n安装完成！");
+  if (workerUrl) {
+    console.log(`管理后台地址：${workerUrl}`);
+    console.log("正在打开浏览器登录页面，请使用刚才设置的管理密码登录…");
+    if (openBrowser(workerUrl)) {
+      console.log("浏览器已打开。若页面未出现，请复制上面的地址手动打开。\n");
+    } else {
+      console.log("浏览器未能自动打开，请复制上面的地址，在浏览器中打开并登录。\n");
+    }
+  } else {
+    console.log("没有自动识别到 workers.dev 地址，请复制上方 Wrangler 输出的网址，在浏览器中打开并使用刚才设置的管理密码登录。\n");
+  }
 } catch (error) {
   console.error(`\n安装失败：${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
