@@ -22,9 +22,11 @@
 准备条件：
 
 1. 一个 Cloudflare 账号。
-2. 本机安装 [Node.js 20.19 或更高版本](https://nodejs.org/)。
+2. Windows 10/11 自带或已安装 Windows Package Manager（`winget`）。
 
-Windows 用户双击 `setup.bat`。macOS / Linux / Windows 终端用户运行：
+Windows 用户直接双击 `setup.bat`。脚本会检查 Node.js 版本；未安装或版本低于 20.19 时，会通过 `winget` 自动安装当前 Node.js LTS，然后继续部署。安装器可能触发一次 Windows 管理员确认。
+
+少数没有 `winget` 的旧版 Windows 需要先安装 Microsoft Store 中的“应用安装程序”，或手动安装 [Node.js 20.19 或更高版本](https://nodejs.org/)。macOS / Linux 用户仍需先安装 Node.js，再运行：
 
 ```bash
 npm install

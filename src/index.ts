@@ -28,7 +28,7 @@ import {
   updateCheckinTime,
 } from "./repository";
 
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
