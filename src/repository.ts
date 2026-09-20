@@ -1,5 +1,7 @@
 import { decryptJson, encryptJson } from "./crypto";
 import { HttpError } from "./http";
+import type { AccountVariant } from "./variant";
+import { variantConfig } from "./variant";
 import type {
   AccountProfile,
   AccountRow,
@@ -28,7 +30,11 @@ function isCredentialPayload(value: unknown): value is CredentialPayload {
 function isOAuthPayload(value: unknown): value is OAuthPayload {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
-  return typeof record.state === "string" && typeof record.authUrl === "string";
+  return (
+    typeof record.state === "string" &&
+    typeof record.authUrl === "string" &&
+    (record.variant === "cn" || record.variant === "ai")
+  );
 }
 
 export function toPublicAccount(row: AccountRow): PublicAccount {
@@ -38,6 +44,8 @@ export function toPublicAccount(row: AccountRow): PublicAccount {
     nickname: row.nickname,
     email: row.email,
     enterpriseName: row.enterprise_name,
+    variant: row.variant,
+    supportsCheckin: variantConfig(row.variant).supportsCheckin,
     enabled: row.enabled === 1,
     needsRelogin: row.needs_relogin === 1,
     reloginReason: row.relogin_reason,
@@ -101,20 +109,21 @@ export async function upsertAccount(
   profile: AccountProfile,
   credentials: CredentialPayload,
   secret: string,
+  variant: AccountVariant,
 ): Promise<string> {
   const existing = await database
-    .prepare("SELECT id FROM accounts WHERE uid = ? AND domain = ?")
-    .bind(profile.uid, credentials.domain)
+    .prepare("SELECT id FROM accounts WHERE uid = ? AND domain = ? AND variant = ?")
+    .bind(profile.uid, credentials.domain, variant)
     .first<{ id: string }>();
   const id = existing?.id ?? crypto.randomUUID();
   const now = Date.now();
   const encrypted = await encryptJson(credentials, secret);
   await database
     .prepare(
-      "INSERT INTO accounts (id, uid, nickname, email, enterprise_id, enterprise_name, domain, credential_ciphertext, credential_iv, " +
-        "expires_at, refresh_expires_at, enabled, needs_relogin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?) " +
+      "INSERT INTO accounts (id, uid, nickname, email, enterprise_id, enterprise_name, variant, domain, credential_ciphertext, credential_iv, " +
+        "expires_at, refresh_expires_at, enabled, needs_relogin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?) " +
         "ON CONFLICT(uid, domain) DO UPDATE SET nickname = excluded.nickname, email = excluded.email, enterprise_id = excluded.enterprise_id, " +
-        "enterprise_name = excluded.enterprise_name, credential_ciphertext = excluded.credential_ciphertext, credential_iv = excluded.credential_iv, " +
+        "enterprise_name = excluded.enterprise_name, variant = excluded.variant, credential_ciphertext = excluded.credential_ciphertext, credential_iv = excluded.credential_iv, " +
         "expires_at = excluded.expires_at, refresh_expires_at = excluded.refresh_expires_at, needs_relogin = 0, relogin_reason = NULL, updated_at = excluded.updated_at",
     )
     .bind(
@@ -124,6 +133,7 @@ export async function upsertAccount(
       profile.email,
       profile.enterpriseId,
       profile.enterpriseName,
+      variant,
       credentials.domain,
       encrypted.ciphertext,
       encrypted.iv,
@@ -156,7 +166,7 @@ export async function createOAuthSession(
 
 export async function getOAuthSession(database: D1Database, id: string, secret: string): Promise<OAuthPayload> {
   const row = await database.prepare("SELECT * FROM oauth_sessions WHERE id = ?").bind(id).first<OAuthSessionRow>();
-  if (!row || row.expires_at <= Date.now()) throw new HttpError(410, "二维码已过期，请重新生成");
+  if (!row || row.expires_at <= Date.now()) throw new HttpError(410, "登录链接已过期，请重新生成");
   const payload = await decryptJson(row.payload_ciphertext, row.payload_iv, secret);
   if (!isOAuthPayload(payload)) throw new Error("oauth_payload_invalid");
   return payload;

@@ -27,8 +27,9 @@ import {
   toPublicAccount,
   updateCheckinTime,
 } from "./repository";
+import type { AccountVariant } from "./variant";
 
-const VERSION = "1.2.1";
+const VERSION = "1.3.0";
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -115,13 +116,23 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     );
   }
   if (pathname === "/api/oauth/start" && request.method === "POST") {
-    const result = await createLoginRequest(env);
-    return json({ ok: true, sessionId: result.id, authUrl: result.authUrl, expiresAt: result.expiresAt });
+    const body = await readJsonObject(request);
+    if (body.variant !== "cn" && body.variant !== "ai") throw new HttpError(400, "请选择中国区或国际版账号");
+    const variant: AccountVariant = body.variant;
+    const result = await createLoginRequest(env, variant);
+    return json({
+      ok: true,
+      sessionId: result.id,
+      authUrl: result.authUrl,
+      expiresAt: result.expiresAt,
+      variant: result.variant,
+    });
   }
 
   const oauthQrMatch = /^\/api\/oauth\/([^/]+)\/qr$/u.exec(pathname);
   if (oauthQrMatch?.[1] && request.method === "GET") {
     const session = await getOAuthSession(env.DB, oauthQrMatch[1], env.TOKEN_ENCRYPTION_KEY);
+    if (session.variant === "ai") throw new HttpError(400, "国际版请使用浏览器 OAuth 登录");
     const svg = await QRCode.toString(session.authUrl, { type: "svg", margin: 1, width: 320, errorCorrectionLevel: "M" });
     return new Response(svg, {
       headers: {
@@ -184,15 +195,20 @@ async function fetchHandler(request: Request, env: Env): Promise<Response> {
 async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> {
   const claim = await claimScheduledRun(env.DB, env.APP_TIMEZONE, env.DEFAULT_CHECKIN_TIME, scheduledTime);
   if (!claim.claimed) return;
-  console.log("scheduled_checkin_started", { checkinTime: claim.checkinTime, localDate: claim.localDate });
+  console.log(
+    JSON.stringify({ message: "scheduled_checkin_started", checkinTime: claim.checkinTime, localDate: claim.localDate }),
+  );
   try {
     const results = await checkinAllAccounts(env);
     await cleanupExpiredData(env.DB);
     await finishScheduledRun(env.DB, claim.localDate, true);
-    console.log("scheduled_checkin_finished", {
-      total: results.length,
-      success: results.filter((result) => result.status === "success" || result.status === "already").length,
-    });
+    console.log(
+      JSON.stringify({
+        message: "scheduled_checkin_finished",
+        total: results.length,
+        success: results.filter((result) => result.status === "success" || result.status === "already").length,
+      }),
+    );
   } catch (error) {
     await finishScheduledRun(env.DB, claim.localDate, false);
     throw error;

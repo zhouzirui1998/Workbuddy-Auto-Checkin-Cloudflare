@@ -1,6 +1,7 @@
 import type { AccountProfile, AccountRow, CredentialPayload, OAuthPayload, WorkBuddyResponse } from "./types";
+import type { AccountVariant } from "./variant";
+import { safeVariantAuthUrl, variantConfig, variantMatchesDomain } from "./variant";
 
-const API_BASE = "https://www.codebuddy.cn";
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export interface FetchResult {
@@ -84,10 +85,11 @@ function authHeaders(credentials: CredentialPayload, account?: AccountRow): Head
 }
 
 function creditApiBase(credentials: CredentialPayload, account: AccountRow): string {
+  if (account.variant === "ai") return variantConfig("ai").apiBase;
   const domain = (account.domain || credentials.domain).trim().toLowerCase();
   return domain === "workbuddy.cn" || domain === "www.workbuddy.cn"
     ? "https://www.workbuddy.cn"
-    : API_BASE;
+    : variantConfig("cn").apiBase;
 }
 
 export async function postCreditResource(
@@ -109,22 +111,9 @@ export async function postCreditResource(
   });
 }
 
-function safeAuthUrl(candidate: string | undefined, state: string): string {
-  if (candidate) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "https:" && (url.hostname === "codebuddy.cn" || url.hostname.endsWith(".codebuddy.cn"))) {
-        return url.toString();
-      }
-    } catch {
-      // Fall through to the official URL.
-    }
-  }
-  return `${API_BASE}/login?state=${encodeURIComponent(state)}`;
-}
-
-export async function startOAuth(): Promise<OAuthPayload> {
-  const result = await request(`${API_BASE}/v2/plugin/auth/state?platform=workbuddy`, {
+export async function startOAuth(variant: AccountVariant): Promise<OAuthPayload> {
+  const config = variantConfig(variant);
+  const result = await request(`${config.apiBase}/v2/plugin/auth/state?platform=${encodeURIComponent(config.oauthPlatform)}`, {
     method: "POST",
     headers: baseHeaders(),
     body: "{}",
@@ -140,11 +129,14 @@ export async function startOAuth(): Promise<OAuthPayload> {
     stringValue(root.authUrl) ??
     stringValue(root.auth_url) ??
     stringValue(root.url);
-  return { state, authUrl: safeAuthUrl(authUrl, state) };
+  return { state, authUrl: safeVariantAuthUrl(authUrl, state, variant), variant };
 }
 
-export async function pollOAuth(state: string): Promise<{ pending: true } | { pending: false; credentials: CredentialPayload }> {
-  const result = await request(`${API_BASE}/v2/plugin/auth/token?state=${encodeURIComponent(state)}`, {
+export async function pollOAuth(
+  state: string,
+  variant: AccountVariant,
+): Promise<{ pending: true } | { pending: false; credentials: CredentialPayload }> {
+  const result = await request(`${variantConfig(variant).apiBase}/v2/plugin/auth/token?state=${encodeURIComponent(state)}`, {
     method: "GET",
     headers: baseHeaders(),
   });
@@ -153,6 +145,10 @@ export async function pollOAuth(state: string): Promise<{ pending: true } | { pe
   const accessToken = stringValue(data?.accessToken) ?? stringValue(data?.access_token);
   if (!isWorkBuddySuccess(result.body) || !accessToken) return { pending: true };
   const refreshToken = stringValue(data.refreshToken) ?? stringValue(data.refresh_token);
+  const domain = stringValue(data.domain) ?? "";
+  if (!variantMatchesDomain(variant, domain)) {
+    throw new Error(`登录响应与${variantConfig(variant).label}不一致，请重新发起登录`);
+  }
   const expiresAt = normalizeTimestamp(data.expiresAt, data.expiresIn);
   const refreshExpiresAt = normalizeTimestamp(data.refreshExpiresAt, data.refreshExpiresIn);
   return {
@@ -160,21 +156,29 @@ export async function pollOAuth(state: string): Promise<{ pending: true } | { pe
     credentials: {
       accessToken,
       ...(refreshToken ? { refreshToken } : {}),
-      domain: stringValue(data.domain) ?? "",
+      domain,
       ...(expiresAt ? { expiresAt } : {}),
       ...(refreshExpiresAt ? { refreshExpiresAt } : {}),
     },
   };
 }
 
-export async function getAccountProfile(state: string, credentials: CredentialPayload): Promise<AccountProfile> {
-  const result = await request(`${API_BASE}/v2/plugin/login/account?state=${encodeURIComponent(state)}`, {
+export async function getAccountProfile(
+  state: string,
+  credentials: CredentialPayload,
+  variant: AccountVariant,
+): Promise<AccountProfile> {
+  const result = await request(`${variantConfig(variant).apiBase}/v2/plugin/login/account?state=${encodeURIComponent(state)}`, {
     method: "GET",
     headers: authHeaders(credentials),
   });
   const data = asRecord(result.body.data);
   const uid = stringValue(data?.uid) ?? stringValue(data?.userId) ?? stringValue(data?.user_id);
   if (!isWorkBuddySuccess(result.body) || !data || !uid) throw new Error(messageOf(result.body));
+  const profileDomain = stringValue(data.domain) ?? "";
+  if (!variantMatchesDomain(variant, profileDomain)) {
+    throw new Error(`账号信息与${variantConfig(variant).label}不一致，请重新发起登录`);
+  }
   return {
     uid,
     nickname: stringValue(data.nickname) ?? stringValue(data.name) ?? null,
@@ -184,13 +188,22 @@ export async function getAccountProfile(state: string, credentials: CredentialPa
   };
 }
 
-export async function refreshCredentials(credentials: CredentialPayload): Promise<CredentialPayload> {
-  if (!credentials.refreshToken) throw new Error("缺少刷新凭据，请重新扫码登录");
-  const headers = baseHeaders();
+export async function refreshCredentials(
+  credentials: CredentialPayload,
+  account: AccountRow,
+): Promise<CredentialPayload> {
+  if (!credentials.refreshToken) throw new Error("缺少刷新凭据，请重新登录");
+  const config = variantConfig(account.variant);
+  const headers = authHeaders(credentials, account);
   headers.set("X-Refresh-Token", credentials.refreshToken);
   headers.set("X-Auth-Refresh-Source", "plugin");
-  if (credentials.domain) headers.set("X-Domain", credentials.domain);
-  const result = await request(`${API_BASE}/v2/plugin/auth/token/refresh`, { method: "POST", headers, body: "{}" });
+  headers.set("Origin", config.apiBase);
+  headers.set("Referer", `${config.apiBase}/`);
+  const result = await request(`${config.apiBase}/v2/plugin/auth/token/refresh`, {
+    method: "POST",
+    headers,
+    body: "{}",
+  });
   const data = asRecord(result.body.data);
   const accessToken = stringValue(data?.accessToken) ?? stringValue(data?.access_token);
   if (!isWorkBuddySuccess(result.body) || !data || !accessToken) throw new Error(messageOf(result.body));
@@ -206,13 +219,14 @@ export async function refreshCredentials(credentials: CredentialPayload): Promis
 }
 
 export async function fetchCheckinStatus(credentials: CredentialPayload, account: AccountRow): Promise<FetchResult> {
-  const primary = await request(`${API_BASE}/v2/billing/meter/checkin-activity-status`, {
+  const apiBase = variantConfig(account.variant).apiBase;
+  const primary = await request(`${apiBase}/v2/billing/meter/checkin-activity-status`, {
     method: "POST",
     headers: authHeaders(credentials, account),
     body: "{}",
   });
   if (isWorkBuddySuccess(primary.body) || isUnauthorized(primary)) return primary;
-  return request(`${API_BASE}/v2/billing/meter/checkin-status`, {
+  return request(`${apiBase}/v2/billing/meter/checkin-status`, {
     method: "POST",
     headers: authHeaders(credentials, account),
     body: "{}",
@@ -225,7 +239,7 @@ export function hasCheckedInToday(result: FetchResult): boolean {
 }
 
 export async function submitDailyCheckin(credentials: CredentialPayload, account: AccountRow): Promise<FetchResult> {
-  return request(`${API_BASE}/v2/billing/meter/daily-checkin`, {
+  return request(`${variantConfig(account.variant).apiBase}/v2/billing/meter/daily-checkin`, {
     method: "POST",
     headers: authHeaders(credentials, account),
     body: "{}",

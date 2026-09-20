@@ -26,7 +26,9 @@ export function json(data: unknown, status = 200, extraHeaders?: HeadersInit): R
 
 export function apiError(error: unknown): Response {
   if (error instanceof HttpError) return json({ ok: false, error: error.message }, error.status);
-  console.error("api_error", error instanceof Error ? error.message : "unknown_error");
+  console.error(
+    JSON.stringify({ message: "api_error", error: error instanceof Error ? error.message : "unknown_error" }),
+  );
   return json({ ok: false, error: "服务暂时不可用，请稍后重试" }, 500);
 }
 

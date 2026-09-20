@@ -25,6 +25,7 @@ import {
   refreshCredentials,
   workBuddyMessage,
 } from "./workbuddy";
+import { billingPaths } from "./variant";
 
 const SUMMARY_PATH = "/billing/meter/get-user-resource-summary";
 const PAID_PATH = "/billing/meter/get-user-resource-paid-packages";
@@ -314,6 +315,20 @@ async function safePostCreditResource(
   }
 }
 
+async function safePostCreditResourceWithFallback(
+  credentials: CredentialPayload,
+  account: AccountRow,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<FetchResult> {
+  let last: FetchResult = { httpStatus: 0, body: { code: -1, message: "积分接口连接失败，请稍后重试" } };
+  for (const candidate of billingPaths(account.variant, path)) {
+    last = await safePostCreditResource(credentials, account, candidate, body);
+    if (last.httpStatus !== 404) return last;
+  }
+  return last;
+}
+
 async function retrySummary(credentials: CredentialPayload, account: AccountRow): Promise<FetchResult> {
   return safePostCreditResource(credentials, account, SUMMARY_PATH, {});
 }
@@ -365,7 +380,7 @@ async function retryUnauthorizedResponses(
 
 async function fetchLegacy(credentials: CredentialPayload, account: AccountRow, now: number): Promise<FetchResult> {
   const range = legacyRange(now);
-  return safePostCreditResource(credentials, account, LEGACY_PATH, {
+  return safePostCreditResourceWithFallback(credentials, account, LEGACY_PATH, {
     PageNumber: 1,
     PageSize: 100,
     ProductCode: "p_tcaca",
@@ -382,9 +397,9 @@ async function ensureFreshCredentials(
 ): Promise<CredentialPayload> {
   if (!credentials.expiresAt || credentials.expiresAt > Date.now() + 5 * 60 * 1000) return credentials;
   if (credentials.refreshExpiresAt && credentials.refreshExpiresAt <= Date.now()) {
-    throw new Error("登录状态已过期，请重新扫码登录");
+    throw new Error("登录状态已过期，请重新登录");
   }
-  const refreshed = await refreshCredentials(credentials);
+  const refreshed = await refreshCredentials(credentials, account);
   await saveCredentials(env.DB, account.id, refreshed, env.TOKEN_ENCRYPTION_KEY);
   return refreshed;
 }
@@ -393,10 +408,24 @@ async function performCreditRefresh(env: Env, account: AccountRow): Promise<Cred
   const now = Date.now();
   let credentials = await getCredentials(account, env.TOKEN_ENCRYPTION_KEY);
   credentials = await ensureFreshCredentials(env, account, credentials);
+
+  if (account.variant === "ai") {
+    let legacy = await fetchLegacy(credentials, account, now);
+    if (isUnauthorized(legacy)) {
+      credentials = await refreshCredentials(credentials, account);
+      await saveCredentials(env.DB, account.id, credentials, env.TOKEN_ENCRYPTION_KEY);
+      legacy = await fetchLegacy(credentials, account, now);
+    }
+    if (isUnauthorized(legacy)) throw new Error("登录状态已失效，请重新登录");
+    const legacySummary = normalizeLegacyCreditSummary(legacy, now);
+    if (legacySummary) return legacySummary;
+    throw new Error(workBuddyMessage(legacy));
+  }
+
   let refreshedAfterUnauthorized = false;
   let responses = await fetchNewResponses(credentials, account, now);
   if ([responses.summary, responses.paid, responses.free].some(isUnauthorized)) {
-    credentials = await refreshCredentials(credentials);
+    credentials = await refreshCredentials(credentials, account);
     await saveCredentials(env.DB, account.id, credentials, env.TOKEN_ENCRYPTION_KEY);
     responses = await retryUnauthorizedResponses(responses, credentials, account, now);
     refreshedAfterUnauthorized = true;
@@ -406,11 +435,11 @@ async function performCreditRefresh(env: Env, account: AccountRow): Promise<Cred
 
   let legacy = await fetchLegacy(credentials, account, now);
   if (isUnauthorized(legacy) && !refreshedAfterUnauthorized) {
-    credentials = await refreshCredentials(credentials);
+    credentials = await refreshCredentials(credentials, account);
     await saveCredentials(env.DB, account.id, credentials, env.TOKEN_ENCRYPTION_KEY);
     legacy = await fetchLegacy(credentials, account, now);
   }
-  if (isUnauthorized(legacy)) throw new Error("登录状态已失效，请重新扫码登录");
+  if (isUnauthorized(legacy)) throw new Error("登录状态已失效，请重新登录");
   const legacySummary = normalizeLegacyCreditSummary(legacy, now);
   if (legacySummary) return legacySummary;
   throw new Error(workBuddyMessage(legacy));
@@ -441,7 +470,7 @@ export async function refreshAccountCredits(env: Env, accountId: string): Promis
     const message = errorMessage(error);
     await recordCreditsError(env.DB, account.id, message);
     if (/登录|token|凭据|credential|unauthorized|decrypt/iu.test(message)) {
-      await markNeedsRelogin(env.DB, account.id, "登录状态失效，请重新扫码登录");
+      await markNeedsRelogin(env.DB, account.id, "登录状态失效，请重新登录");
     }
     console.warn(JSON.stringify({ message: "credits_refresh_failed", accountId: account.id, error: message }));
     return { accountId: account.id, status: "error", message };

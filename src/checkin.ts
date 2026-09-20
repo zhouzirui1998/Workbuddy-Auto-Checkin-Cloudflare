@@ -40,9 +40,9 @@ async function ensureFreshCredentials(
 ): Promise<CredentialPayload> {
   if (!credentials.expiresAt || credentials.expiresAt > Date.now() + 5 * 60 * 1000) return credentials;
   if (credentials.refreshExpiresAt && credentials.refreshExpiresAt <= Date.now()) {
-    throw new Error("登录状态已过期，请重新扫码登录");
+    throw new Error("登录状态已过期，请重新登录");
   }
-  const refreshed = await refreshCredentials(credentials);
+  const refreshed = await refreshCredentials(credentials, account);
   await saveCredentials(env.DB, account.id, refreshed, env.TOKEN_ENCRYPTION_KEY);
   return refreshed;
 }
@@ -53,11 +53,11 @@ async function performCheckin(env: Env, account: AccountRow): Promise<CheckinRes
 
   let statusResult = await fetchCheckinStatus(credentials, account);
   if (isUnauthorized(statusResult)) {
-    credentials = await refreshCredentials(credentials);
+    credentials = await refreshCredentials(credentials, account);
     await saveCredentials(env.DB, account.id, credentials, env.TOKEN_ENCRYPTION_KEY);
     statusResult = await fetchCheckinStatus(credentials, account);
   }
-  if (isUnauthorized(statusResult)) throw new Error("登录状态已失效，请重新扫码登录");
+  if (isUnauthorized(statusResult)) throw new Error("登录状态已失效，请重新登录");
   if (!isWorkBuddySuccess(statusResult.body)) throw new Error(workBuddyMessage(statusResult));
 
   if (hasCheckedInToday(statusResult)) {
@@ -66,11 +66,11 @@ async function performCheckin(env: Env, account: AccountRow): Promise<CheckinRes
 
   let submitResult = await submitDailyCheckin(credentials, account);
   if (isUnauthorized(submitResult)) {
-    credentials = await refreshCredentials(credentials);
+    credentials = await refreshCredentials(credentials, account);
     await saveCredentials(env.DB, account.id, credentials, env.TOKEN_ENCRYPTION_KEY);
     submitResult = await submitDailyCheckin(credentials, account);
   }
-  if (isUnauthorized(submitResult)) throw new Error("登录状态已失效，请重新扫码登录");
+  if (isUnauthorized(submitResult)) throw new Error("登录状态已失效，请重新登录");
   const message = workBuddyMessage(submitResult);
   if (isWorkBuddySuccess(submitResult.body)) {
     return { accountId: account.id, status: "success", message: message === "WorkBuddy 接口返回失败" ? "签到成功" : message };
@@ -83,6 +83,9 @@ async function performCheckin(env: Env, account: AccountRow): Promise<CheckinRes
 
 export async function checkinAccount(env: Env, accountId: string): Promise<CheckinResult> {
   const account = await getAccount(env.DB, accountId);
+  if (account.variant === "ai") {
+    return { accountId: account.id, status: "unsupported", message: "国际版签到活动暂未开放" };
+  }
   const date = localDate(env.APP_TIMEZONE);
   if (!(await acquireCheckinLock(env.DB, account.id))) {
     return { accountId: account.id, status: "busy", message: "该账号正在签到，请稍后刷新" };
@@ -90,15 +93,15 @@ export async function checkinAccount(env: Env, accountId: string): Promise<Check
   try {
     const result = await performCheckin(env, account);
     await recordCheckin(env.DB, account.id, date, result.status, result.message);
-    console.log("checkin_completed", { accountId: account.id, status: result.status });
+    console.log(JSON.stringify({ message: "checkin_completed", accountId: account.id, status: result.status }));
     return result;
   } catch (error) {
     const message = errorMessage(error);
     if (/登录|token|凭据|credential|unauthorized|decrypt/iu.test(message)) {
-      await markNeedsRelogin(env.DB, account.id, "登录状态失效，请重新扫码登录");
+      await markNeedsRelogin(env.DB, account.id, "登录状态失效，请重新登录");
     }
     await recordCheckin(env.DB, account.id, date, "error", message);
-    console.warn("checkin_failed", { accountId: account.id, message });
+    console.warn(JSON.stringify({ message: "checkin_failed", accountId: account.id, error: message }));
     return { accountId: account.id, status: "error", message };
   } finally {
     await releaseCheckinLock(env.DB, account.id);
@@ -106,7 +109,7 @@ export async function checkinAccount(env: Env, accountId: string): Promise<Check
 }
 
 export async function checkinAllAccounts(env: Env): Promise<CheckinResult[]> {
-  const accounts = (await listAccounts(env.DB)).filter((account) => account.enabled === 1);
+  const accounts = (await listAccounts(env.DB)).filter((account) => account.enabled === 1 && account.variant === "cn");
   const results: CheckinResult[] = [];
   for (const account of accounts) {
     results.push(await checkinAccount(env, account.id));

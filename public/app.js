@@ -8,6 +8,10 @@ const state = {
   checkinTime: "08:10",
   renderedBeijingDate: "",
   qrPollTimer: null,
+  oauthSessionId: null,
+  oauthAuthUrl: "",
+  loginVariant: "cn",
+  loginRequestSerial: 0,
   toastTimer: null,
 };
 
@@ -118,7 +122,7 @@ function renderAccounts() {
     const card = document.createElement("article");
     card.className = "account-card";
     const avatar = document.createElement("div");
-    avatar.className = "account-avatar";
+    avatar.className = `account-avatar${account.variant === "ai" ? " account-avatar-international" : ""}`;
     avatar.textContent = accountName(account).slice(0, 1).toUpperCase();
 
     const main = document.createElement("div");
@@ -128,10 +132,16 @@ function renderAccounts() {
     const title = document.createElement("h3");
     title.className = "account-title";
     title.textContent = accountName(account);
+    const version = document.createElement("span");
+    version.className = `account-version${account.variant === "ai" ? " account-version-international" : ""}`;
+    version.textContent = account.variant === "ai" ? "INTL" : "CN";
+    const titleGroup = document.createElement("div");
+    titleGroup.className = "account-title-group";
+    titleGroup.append(title, version);
     const badge = document.createElement("span");
     badge.className = `badge ${meta.className}`;
     badge.textContent = meta.label;
-    titleRow.append(title, badge);
+    titleRow.append(titleGroup, badge);
 
     const subtitle = document.createElement("p");
     subtitle.className = "account-subtitle";
@@ -165,14 +175,18 @@ function renderAccounts() {
     credits.append(creditsMain, creditsMeta);
     const actions = document.createElement("div");
     actions.className = "account-actions";
-    const checkin = createButton("立即签到", "button-secondary", (button) => checkinOne(account.id, button));
-    checkin.disabled = !account.enabled;
-    actions.append(
-      checkin,
-      createButton("刷新积分", "button-ghost", (button) => refreshCreditsOne(account.id, button)),
-      createButton(account.enabled ? "暂停" : "启用", "button-ghost", (button) => toggleAccount(account, button)),
-      createButton("删除", "button-danger", (button) => removeAccount(account, button)),
-    );
+    if (account.supportsCheckin) {
+      const checkin = createButton("立即签到", "button-secondary", (button) => checkinOne(account.id, button));
+      checkin.disabled = !account.enabled;
+      actions.append(checkin);
+    }
+    actions.append(createButton("刷新积分", "button-ghost", (button) => refreshCreditsOne(account.id, button)));
+    if (account.supportsCheckin) {
+      actions.append(
+        createButton(account.enabled ? "暂停" : "启用", "button-ghost", (button) => toggleAccount(account, button)),
+      );
+    }
+    actions.append(createButton("删除", "button-danger", (button) => removeAccount(account, button)));
     main.append(titleRow, subtitle, status, credits, actions);
     card.append(avatar, main);
     grid.append(card);
@@ -359,14 +373,31 @@ function stopQrPolling() {
   state.qrPollTimer = null;
 }
 
-async function pollQrStatus(sessionId) {
-  if (!$("#qr-dialog").open) return;
+function setLoginVariant(variant) {
+  state.loginVariant = variant;
+  const international = variant === "ai";
+  $("#variant-cn-button").classList.toggle("active", !international);
+  $("#variant-cn-button").setAttribute("aria-selected", String(!international));
+  $("#variant-ai-button").classList.toggle("active", international);
+  $("#variant-ai-button").setAttribute("aria-selected", String(international));
+  $("#login-dialog-title").textContent = international ? "登录 WorkBuddy 国际版" : "扫码登录 WorkBuddy 中国区";
+  $("#login-dialog-description").textContent = international
+    ? "使用官方浏览器 OAuth，可选择 Google、GitHub、X、邮箱等方式。"
+    : "请使用手机扫码并在页面中确认登录。二维码约 10 分钟后失效。";
+  $("#qr-stage").hidden = international;
+  $("#oauth-web-stage").hidden = !international;
+  $("#copy-oauth-link").hidden = !international || !state.oauthAuthUrl;
+  $("#oauth-note").hidden = !international;
+}
+
+async function pollQrStatus(sessionId, variant) {
+  if (!$("#qr-dialog").open || sessionId !== state.oauthSessionId) return;
   try {
     const data = await api(`/api/oauth/${sessionId}/status`);
     if (!data.pending) {
       stopQrPolling();
       $("#qr-status").lastElementChild.textContent = "登录成功，正在载入账号…";
-      toast("账号绑定成功");
+      toast(variant === "ai" ? "国际版账号绑定成功" : "中国区账号绑定成功");
       await loadDashboard({ quiet: true });
       setTimeout(() => $("#qr-dialog").close(), 600);
       return;
@@ -377,34 +408,76 @@ async function pollQrStatus(sessionId) {
     toast(error.message, "error");
     return;
   }
-  state.qrPollTimer = setTimeout(() => pollQrStatus(sessionId), 2200);
+  state.qrPollTimer = setTimeout(() => pollQrStatus(sessionId, variant), 2200);
 }
 
-async function openQrDialog() {
-  const dialog = $("#qr-dialog");
+async function startOAuthLogin(variant) {
   const image = $("#qr-image");
+  const serial = ++state.loginRequestSerial;
   stopQrPolling();
+  state.oauthSessionId = null;
+  state.oauthAuthUrl = "";
+  setLoginVariant(variant);
   image.hidden = true;
   image.removeAttribute("src");
-  $("#qr-stage .spinner").hidden = false;
-  $("#qr-status").lastElementChild.textContent = "正在生成安全登录二维码…";
+  $("#qr-stage .spinner").hidden = variant === "ai";
+  $("#qr-status").lastElementChild.textContent = variant === "ai" ? "正在生成官方授权链接…" : "正在生成安全登录二维码…";
   $("#qr-link").hidden = true;
-  dialog.showModal();
+  $("#copy-oauth-link").hidden = true;
   try {
-    const data = await api("/api/oauth/start", { method: "POST", body: "{}" });
-    image.onload = () => {
-      $("#qr-stage .spinner").hidden = true;
-      image.hidden = false;
-      $("#qr-status").lastElementChild.textContent = "等待手机确认登录…";
-    };
-    image.src = `/api/oauth/${data.sessionId}/qr`;
-    $("#qr-link").href = data.authUrl;
-    $("#qr-link").hidden = false;
-    state.qrPollTimer = setTimeout(() => pollQrStatus(data.sessionId), 1800);
+    const data = await api("/api/oauth/start", { method: "POST", body: JSON.stringify({ variant }) });
+    if (serial !== state.loginRequestSerial || !$("#qr-dialog").open) return;
+    state.oauthSessionId = data.sessionId;
+    state.oauthAuthUrl = data.authUrl;
+    const link = $("#qr-link");
+    link.href = data.authUrl;
+    link.hidden = false;
+    if (variant === "ai") {
+      link.className = "button button-primary button-small";
+      link.textContent = "打开官方授权页";
+      $("#copy-oauth-link").hidden = false;
+      $("#qr-status").lastElementChild.textContent = "等待你在浏览器中完成授权…";
+    } else {
+      link.className = "text-link";
+      link.textContent = "二维码无法识别？在新窗口打开";
+      image.onload = () => {
+        if (data.sessionId !== state.oauthSessionId) return;
+        $("#qr-stage .spinner").hidden = true;
+        image.hidden = false;
+        $("#qr-status").lastElementChild.textContent = "等待手机确认登录…";
+      };
+      image.src = `/api/oauth/${data.sessionId}/qr`;
+    }
+    state.qrPollTimer = setTimeout(() => pollQrStatus(data.sessionId, variant), 1800);
   } catch (error) {
+    if (serial !== state.loginRequestSerial) return;
     $("#qr-stage .spinner").hidden = true;
     $("#qr-status").lastElementChild.textContent = error.message;
     toast(error.message, "error");
+  }
+}
+
+function openQrDialog() {
+  const dialog = $("#qr-dialog");
+  dialog.showModal();
+  void startOAuthLogin(state.loginVariant);
+}
+
+async function copyOAuthLink() {
+  if (!state.oauthAuthUrl) return;
+  try {
+    await navigator.clipboard.writeText(state.oauthAuthUrl);
+    toast("授权链接已复制，请粘贴到浏览器无痕窗口");
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = state.oauthAuthUrl;
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand("copy");
+    field.remove();
+    toast(copied ? "授权链接已复制，请粘贴到浏览器无痕窗口" : "复制失败，请点击“打开官方授权页”", copied ? "success" : "error");
   }
 }
 
@@ -447,7 +520,19 @@ $("#schedule-form").addEventListener("submit", saveSchedule);
 $("#password-form").addEventListener("submit", savePassword);
 $("#add-account-button").addEventListener("click", openQrDialog);
 $("#empty-add-button").addEventListener("click", openQrDialog);
-$("#qr-dialog").addEventListener("close", stopQrPolling);
+$("#variant-cn-button").addEventListener("click", () => {
+  if (state.loginVariant !== "cn") void startOAuthLogin("cn");
+});
+$("#variant-ai-button").addEventListener("click", () => {
+  if (state.loginVariant !== "ai") void startOAuthLogin("ai");
+});
+$("#copy-oauth-link").addEventListener("click", () => { void copyOAuthLink(); });
+$("#qr-dialog").addEventListener("close", () => {
+  stopQrPolling();
+  state.oauthSessionId = null;
+  state.oauthAuthUrl = "";
+  state.loginRequestSerial += 1;
+});
 
 function refreshDateSensitiveStatus() {
   if (!views.app.hidden && state.renderedBeijingDate !== beijingDate(Date.now())) renderAccounts();

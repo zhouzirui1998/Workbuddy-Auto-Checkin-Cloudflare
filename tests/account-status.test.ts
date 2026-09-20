@@ -6,6 +6,8 @@ const now = Date.parse("2026-09-20T17:35:00.000Z"); // 2026-09-21 01:35 in Beiji
 function account(overrides: Partial<Parameters<typeof statusMeta>[0]> = {}): Parameters<typeof statusMeta>[0] {
   return {
     enabled: true,
+    variant: "cn",
+    supportsCheckin: true,
     needsRelogin: false,
     reloginReason: null,
     lastCheckinStatus: "already",
@@ -42,5 +44,20 @@ describe("date-aware account status", () => {
     });
     const relogin = account({ needsRelogin: true });
     expect(accountSummary([yesterdayFailure, todayFailure, relogin], now)).toEqual({ successful: 0, attention: 2 });
+  });
+
+  it("shows international accounts as unsupported without counting them as failed or unsigned", () => {
+    const international = account({
+      variant: "ai",
+      supportsCheckin: false,
+      lastCheckinStatus: null,
+      lastCheckinMessage: null,
+      lastCheckinAt: null,
+    });
+    expect(statusMeta(international, now)).toMatchObject({
+      label: "签到未开放",
+      message: "国际版目前支持登录和积分查询，签到活动暂未开放",
+    });
+    expect(accountSummary([international], now)).toEqual({ successful: 0, attention: 0 });
   });
 });

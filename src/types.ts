@@ -1,3 +1,5 @@
+import type { AccountVariant } from "./variant";
+
 export interface CredentialPayload {
   accessToken: string;
   refreshToken?: string;
@@ -9,6 +11,7 @@ export interface CredentialPayload {
 export interface OAuthPayload {
   state: string;
   authUrl: string;
+  variant: AccountVariant;
 }
 
 export interface AccountProfile {
@@ -26,6 +29,7 @@ export interface AccountRow {
   email: string | null;
   enterprise_id: string | null;
   enterprise_name: string | null;
+  variant: AccountVariant;
   domain: string;
   credential_ciphertext: string;
   credential_iv: string;
@@ -54,6 +58,8 @@ export interface PublicAccount {
   nickname: string | null;
   email: string | null;
   enterpriseName: string | null;
+  variant: AccountVariant;
+  supportsCheckin: boolean;
   enabled: boolean;
   needsRelogin: boolean;
   reloginReason: string | null;
@@ -98,7 +104,7 @@ export interface CheckinLogRow {
 
 export interface CheckinResult {
   accountId: string;
-  status: "success" | "already" | "error" | "busy";
+  status: "success" | "already" | "error" | "busy" | "unsupported";
   message: string;
 }
 

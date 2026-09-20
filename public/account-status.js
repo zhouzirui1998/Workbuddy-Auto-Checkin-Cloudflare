@@ -9,6 +9,8 @@ const beijingDateFormatter = new Intl.DateTimeFormat("en-CA", {
 /**
  * @typedef {object} AccountStatusInput
  * @property {boolean} enabled
+ * @property {"cn" | "ai"} [variant]
+ * @property {boolean} [supportsCheckin]
  * @property {boolean} needsRelogin
  * @property {string | null} reloginReason
  * @property {string | null} lastCheckinStatus
@@ -50,6 +52,14 @@ export function statusMeta(account, now = Date.now()) {
       label: "需重新登录",
       className: "badge-danger",
       message: account.reloginReason || "登录状态已失效",
+      previousResult: false,
+    };
+  }
+  if (account.supportsCheckin === false || account.variant === "ai") {
+    return {
+      label: "签到未开放",
+      className: "badge-muted",
+      message: "国际版目前支持登录和积分查询，签到活动暂未开放",
       previousResult: false,
     };
   }
@@ -98,12 +108,18 @@ export function statusMeta(account, now = Date.now()) {
 export function accountSummary(accounts, now = Date.now()) {
   const successful = accounts.filter(
     (account) =>
-      hasCheckinResultToday(account, now) && ["success", "already"].includes(account.lastCheckinStatus ?? ""),
+      account.supportsCheckin !== false &&
+      account.variant !== "ai" &&
+      hasCheckinResultToday(account, now) &&
+      ["success", "already"].includes(account.lastCheckinStatus ?? ""),
   ).length;
   const attention = accounts.filter(
     (account) =>
       account.needsRelogin ||
-      (hasCheckinResultToday(account, now) && account.lastCheckinStatus === "error"),
+      (account.supportsCheckin !== false &&
+        account.variant !== "ai" &&
+        hasCheckinResultToday(account, now) &&
+        account.lastCheckinStatus === "error"),
   ).length;
   return { successful, attention };
 }

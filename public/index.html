@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#5b5ce2" />
     <title>WorkBuddy 自动签到</title>
     <link rel="stylesheet" href="/styles.css" />
-    <script type="module" src="/app.js?v=1.2.1"></script>
+    <script type="module" src="/app.js?v=1.3.0"></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -18,7 +18,7 @@
         <div class="brand-mark" aria-hidden="true">W</div>
         <p class="eyebrow">SELF-HOSTED · CLOUDFLARE</p>
         <h1 id="login-title">WorkBuddy 自动签到</h1>
-        <p class="muted intro">登录你的私有管理页，扫码绑定账号后每天自动领取签到积分。</p>
+        <p class="muted intro">登录你的私有管理页，管理中国区自动签到与国际版账号积分。</p>
         <form id="login-form" class="login-form">
           <label for="password">管理密码</label>
           <div class="password-row">
@@ -38,7 +38,7 @@
       <header class="topbar">
         <a class="brand" href="/" aria-label="WorkBuddy 自动签到首页">
           <span class="brand-mark brand-mark-small">W</span>
-          <span><strong>WorkBuddy</strong><small>自动签到</small></span>
+          <span><strong>WorkBuddy</strong><small>账号与签到</small></span>
         </a>
         <div class="topbar-actions">
           <span id="schedule-chip" class="schedule-chip"></span>
@@ -51,33 +51,33 @@
         <section class="hero">
           <div>
             <p class="eyebrow">ACCOUNT CENTER</p>
-            <h1>签到控制台</h1>
-            <p class="muted">绑定多个账号，一处查看签到状态。定时任务每天自动执行。</p>
+            <h1>账号控制台</h1>
+            <p class="muted">中国区账号每天自动签到；国际版支持 OAuth 登录和积分查询。</p>
           </div>
           <div class="hero-actions">
             <button id="credits-all-button" class="button button-ghost" type="button">刷新全部积分</button>
-            <button id="checkin-all-button" class="button button-secondary" type="button">全部签到</button>
+            <button id="checkin-all-button" class="button button-secondary" type="button">中国区全部签到</button>
             <button id="add-account-button" class="button button-primary" type="button">＋ 添加账号</button>
           </div>
         </section>
 
         <section class="stats" aria-label="状态概览">
           <article class="stat-card"><span>已绑定账号</span><strong id="account-count">—</strong><small>个</small></article>
-          <article class="stat-card"><span>今日已成功</span><strong id="success-count">—</strong><small>个</small></article>
+          <article class="stat-card"><span>中国区今日已签</span><strong id="success-count">—</strong><small>个</small></article>
           <article class="stat-card"><span>需要处理</span><strong id="attention-count">—</strong><small>个</small></article>
           <article class="stat-card"><span>账号剩余积分</span><strong id="credits-total">—</strong><small>积分</small></article>
         </section>
 
         <section class="section-block" aria-labelledby="accounts-heading">
           <div class="section-heading">
-            <div><h2 id="accounts-heading">账号</h2><p class="muted">暂停账号后，定时任务会跳过它。</p></div>
+            <div><h2 id="accounts-heading">账号</h2><p class="muted">中国区支持自动签到；国际版签到活动尚未开放。</p></div>
             <button id="refresh-button" class="button button-ghost" type="button">刷新</button>
           </div>
           <div id="accounts-loading" class="loading-panel"><span class="spinner"></span><span>正在加载账号…</span></div>
           <div id="accounts-empty" class="empty-panel" hidden>
             <div class="empty-icon">⌁</div>
             <h3>还没有绑定账号</h3>
-            <p>点击“添加账号”，使用 WorkBuddy 手机端扫码登录。</p>
+            <p>点击“添加账号”，选择中国区扫码或国际版浏览器 OAuth 登录。</p>
             <button id="empty-add-button" class="button button-primary" type="button">添加第一个账号</button>
           </div>
           <div id="accounts-grid" class="accounts-grid"></div>
@@ -100,14 +100,27 @@
       <form method="dialog"><button id="qr-close-button" class="dialog-close" aria-label="关闭">×</button></form>
       <div class="dialog-content">
         <p class="eyebrow">ADD ACCOUNT</p>
-        <h2>扫码登录 WorkBuddy</h2>
-        <p class="muted">请使用手机扫码并在页面中确认登录。二维码约 10 分钟后失效。</p>
+        <h2 id="login-dialog-title">添加 WorkBuddy 账号</h2>
+        <p id="login-dialog-description" class="muted">请选择要绑定的账号版本。</p>
+        <div class="variant-tabs" role="tablist" aria-label="账号版本">
+          <button id="variant-cn-button" class="variant-tab active" type="button" role="tab" aria-selected="true">中国区</button>
+          <button id="variant-ai-button" class="variant-tab" type="button" role="tab" aria-selected="false">国际版</button>
+        </div>
         <div id="qr-stage" class="qr-stage">
           <span class="spinner spinner-large"></span>
           <img id="qr-image" alt="WorkBuddy 登录二维码" hidden />
         </div>
+        <div id="oauth-web-stage" class="oauth-web-stage" hidden>
+          <span class="oauth-web-icon" aria-hidden="true">↗</span>
+          <strong>在浏览器中完成官方授权</strong>
+          <small>可选择 Google、GitHub、X、邮箱等登录方式</small>
+        </div>
         <div id="qr-status" class="qr-status"><span class="pulse"></span><span>正在生成安全登录二维码…</span></div>
-        <a id="qr-link" class="text-link" href="#" target="_blank" rel="noopener noreferrer" hidden>二维码无法识别？在新窗口打开</a>
+        <div class="oauth-actions">
+          <a id="qr-link" class="text-link" href="#" target="_blank" rel="noopener noreferrer" hidden>二维码无法识别？在新窗口打开</a>
+          <button id="copy-oauth-link" class="button button-ghost" type="button" hidden>复制授权链接</button>
+        </div>
+        <p id="oauth-note" class="oauth-note" hidden>如果浏览器已登录过 workbuddy.ai，请把链接粘贴到无痕窗口，以免出现“显示成功但未绑定”的情况。</p>
       </div>
     </dialog>
 
