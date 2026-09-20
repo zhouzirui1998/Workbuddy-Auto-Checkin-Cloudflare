@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#5b5ce2" />
+    <title>WorkBuddy 自动签到</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main id="login-view" class="login-shell" hidden>
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="brand-mark" aria-hidden="true">W</div>
+        <p class="eyebrow">SELF-HOSTED · CLOUDFLARE</p>
+        <h1 id="login-title">WorkBuddy 自动签到</h1>
+        <p class="muted intro">登录你的私有管理页，扫码绑定账号后每天自动领取签到积分。</p>
+        <form id="login-form" class="login-form">
+          <label for="password">管理密码</label>
+          <div class="password-row">
+            <input id="password" name="password" type="password" autocomplete="current-password" minlength="1" required />
+            <button id="toggle-password" class="icon-button" type="button" aria-label="显示密码">显示</button>
+          </div>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+          <button id="login-button" class="button button-primary button-wide" type="submit">
+            <span>进入管理后台</span>
+          </button>
+        </form>
+        <p class="privacy-note">凭据仅保存在你自己的 Cloudflare D1 中，并经过加密。</p>
+      </section>
+    </main>
+
+    <div id="app-view" class="app-shell" hidden>
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="WorkBuddy 自动签到首页">
+          <span class="brand-mark brand-mark-small">W</span>
+          <span><strong>WorkBuddy</strong><small>自动签到</small></span>
+        </a>
+        <div class="topbar-actions">
+          <span id="schedule-chip" class="schedule-chip"></span>
+          <button id="logout-button" class="button button-ghost" type="button">退出</button>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">ACCOUNT CENTER</p>
+            <h1>签到控制台</h1>
+            <p class="muted">绑定多个账号，一处查看签到状态。定时任务每天自动执行。</p>
+          </div>
+          <div class="hero-actions">
+            <button id="checkin-all-button" class="button button-secondary" type="button">全部签到</button>
+            <button id="add-account-button" class="button button-primary" type="button">＋ 添加账号</button>
+          </div>
+        </section>
+
+        <section class="stats" aria-label="状态概览">
+          <article class="stat-card"><span>已绑定账号</span><strong id="account-count">—</strong><small>个</small></article>
+          <article class="stat-card"><span>今日已成功</span><strong id="success-count">—</strong><small>个</small></article>
+          <article class="stat-card"><span>需要处理</span><strong id="attention-count">—</strong><small>个</small></article>
+        </section>
+
+        <section class="section-block" aria-labelledby="accounts-heading">
+          <div class="section-heading">
+            <div><h2 id="accounts-heading">账号</h2><p class="muted">暂停账号后，定时任务会跳过它。</p></div>
+            <button id="refresh-button" class="button button-ghost" type="button">刷新</button>
+          </div>
+          <div id="accounts-loading" class="loading-panel"><span class="spinner"></span><span>正在加载账号…</span></div>
+          <div id="accounts-empty" class="empty-panel" hidden>
+            <div class="empty-icon">⌁</div>
+            <h3>还没有绑定账号</h3>
+            <p>点击“添加账号”，使用 WorkBuddy 手机端扫码登录。</p>
+            <button id="empty-add-button" class="button button-primary" type="button">添加第一个账号</button>
+          </div>
+          <div id="accounts-grid" class="accounts-grid"></div>
+        </section>
+
+        <section class="section-block" aria-labelledby="logs-heading">
+          <div class="section-heading"><div><h2 id="logs-heading">最近记录</h2><p class="muted">保留最近 30 天的签到结果。</p></div></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>账号</th><th>日期</th><th>结果</th><th>说明</th><th>时间</th></tr></thead>
+              <tbody id="logs-body"></tbody>
+            </table>
+            <div id="logs-empty" class="table-empty">暂无签到记录</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="qr-dialog" class="dialog">
+      <form method="dialog"><button id="qr-close-button" class="dialog-close" aria-label="关闭">×</button></form>
+      <div class="dialog-content">
+        <p class="eyebrow">ADD ACCOUNT</p>
+        <h2>扫码登录 WorkBuddy</h2>
+        <p class="muted">请使用手机扫码并在页面中确认登录。二维码约 10 分钟后失效。</p>
+        <div id="qr-stage" class="qr-stage">
+          <span class="spinner spinner-large"></span>
+          <img id="qr-image" alt="WorkBuddy 登录二维码" hidden />
+        </div>
+        <div id="qr-status" class="qr-status"><span class="pulse"></span><span>正在生成安全登录二维码…</span></div>
+        <a id="qr-link" class="text-link" href="#" target="_blank" rel="noopener noreferrer" hidden>二维码无法识别？在新窗口打开</a>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>

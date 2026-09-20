@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "workbuddy-auto-checkin",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "APP_ENVIRONMENT": "production",
+    "APP_TIMEZONE": "Asia/Shanghai",
+    "SCHEDULE_LABEL": "每天 08:10（北京时间）"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "workbuddy-auto-checkin-db",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "triggers": {
+    "crons": ["10 0 * * *"]
+  }
+}
