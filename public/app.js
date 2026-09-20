@@ -1,9 +1,12 @@
+import { accountSummary, beijingDate, statusMeta } from "./account-status.js";
+
 const $ = (selector) => document.querySelector(selector);
 
 const state = {
   accounts: [],
   logs: [],
   checkinTime: "08:10",
+  renderedBeijingDate: "",
   qrPollTimer: null,
   toastTimer: null,
 };
@@ -68,15 +71,6 @@ function accountName(account) {
   return account.nickname || account.email || `账号 ${account.uid.slice(0, 8)}`;
 }
 
-function statusMeta(account) {
-  if (account.needsRelogin) return { label: "需重新登录", className: "badge-danger", message: account.reloginReason || "登录状态已失效" };
-  if (!account.enabled) return { label: "已暂停", className: "badge-muted", message: "自动签到已暂停" };
-  if (account.lastCheckinStatus === "success") return { label: "签到成功", className: "badge-success", message: account.lastCheckinMessage || "签到成功" };
-  if (account.lastCheckinStatus === "already") return { label: "今日已签", className: "badge-success", message: account.lastCheckinMessage || "今天已经签到" };
-  if (account.lastCheckinStatus === "error") return { label: "签到失败", className: "badge-danger", message: account.lastCheckinMessage || "签到失败" };
-  return { label: "等待签到", className: "badge-warning", message: "尚无签到记录" };
-}
-
 function createButton(label, className, handler) {
   const button = document.createElement("button");
   button.type = "button";
@@ -87,18 +81,19 @@ function createButton(label, className, handler) {
 }
 
 function renderAccounts() {
+  const now = Date.now();
+  state.renderedBeijingDate = beijingDate(now);
   const grid = $("#accounts-grid");
   grid.replaceChildren();
   $("#accounts-loading").hidden = true;
   $("#accounts-empty").hidden = state.accounts.length !== 0;
-  const successful = state.accounts.filter((account) => ["success", "already"].includes(account.lastCheckinStatus)).length;
-  const attention = state.accounts.filter((account) => account.needsRelogin || account.lastCheckinStatus === "error").length;
+  const { successful, attention } = accountSummary(state.accounts, now);
   $("#account-count").textContent = state.accounts.length;
   $("#success-count").textContent = successful;
   $("#attention-count").textContent = attention;
 
   for (const account of state.accounts) {
-    const meta = statusMeta(account);
+    const meta = statusMeta(account, now);
     const card = document.createElement("article");
     card.className = "account-card";
     const avatar = document.createElement("div");
@@ -122,7 +117,8 @@ function renderAccounts() {
     subtitle.textContent = [account.email, account.enterpriseName].filter(Boolean).join(" · ") || `UID ${account.uid}`;
     const status = document.createElement("div");
     status.className = "account-status";
-    status.textContent = `${meta.message}${account.lastCheckinAt ? ` · ${formatTime(account.lastCheckinAt)}` : ""}`;
+    const timeLabel = meta.previousResult ? "上次签到：" : "";
+    status.textContent = `${meta.message}${account.lastCheckinAt ? ` · ${timeLabel}${formatTime(account.lastCheckinAt)}` : ""}`;
     const actions = document.createElement("div");
     actions.className = "account-actions";
     const checkin = createButton("立即签到", "button-secondary", (button) => checkinOne(account.id, button));
@@ -377,6 +373,13 @@ $("#password-form").addEventListener("submit", savePassword);
 $("#add-account-button").addEventListener("click", openQrDialog);
 $("#empty-add-button").addEventListener("click", openQrDialog);
 $("#qr-dialog").addEventListener("close", stopQrPolling);
+
+function refreshDateSensitiveStatus() {
+  if (!views.app.hidden && state.renderedBeijingDate !== beijingDate(Date.now())) renderAccounts();
+}
+
+setInterval(refreshDateSensitiveStatus, 30_000);
+document.addEventListener("visibilitychange", refreshDateSensitiveStatus);
 
 (async function initialize() {
   try {

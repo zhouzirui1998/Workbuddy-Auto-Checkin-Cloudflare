@@ -11,6 +11,10 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    files: ["public/**/*.js"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
     files: ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
     languageOptions: {
       parserOptions: {

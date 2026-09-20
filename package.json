@@ -1,6 +1,6 @@
 {
   "name": "workbuddy-auto-checkin",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "可自托管的 WorkBuddy 多账号自动签到 Cloudflare Worker",
   "type": "module",
@@ -10,7 +10,7 @@
     "types": "wrangler types",
     "types:check": "wrangler types --check",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/**/*.ts tests/**/*.ts scripts/**/*.mjs vitest.config.ts",
+    "lint": "eslint src/**/*.ts tests/**/*.ts scripts/**/*.mjs public/**/*.js vitest.config.ts",
     "test": "vitest run",
     "check": "npm run types:check && npm run typecheck && npm run lint && npm test && wrangler deploy --dry-run",
     "setup:cloudflare": "node scripts/setup.mjs",
