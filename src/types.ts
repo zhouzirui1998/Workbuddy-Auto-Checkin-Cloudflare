@@ -38,6 +38,12 @@ export interface AccountRow {
   last_checkin_message: string | null;
   last_checkin_at: number | null;
   checkin_lock_until: number | null;
+  credits_total_capacity: number | null;
+  credits_total_remaining: number | null;
+  credits_soonest_expire_at: number | null;
+  credits_updated_at: number | null;
+  credits_error: string | null;
+  credits_error_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -54,7 +60,30 @@ export interface PublicAccount {
   lastCheckinStatus: string | null;
   lastCheckinMessage: string | null;
   lastCheckinAt: number | null;
+  credits: PublicCredits;
   createdAt: number;
+}
+
+export interface PublicCredits {
+  totalCapacity: number | null;
+  totalRemaining: number | null;
+  soonestExpireAt: number | null;
+  updatedAt: number | null;
+  error: string | null;
+  errorAt: number | null;
+}
+
+export interface CreditSummary {
+  totalCapacity: number;
+  totalRemaining: number;
+  soonestExpireAt: number | null;
+}
+
+export interface CreditRefreshResult {
+  accountId: string;
+  status: "success" | "error" | "busy";
+  message: string;
+  credits?: PublicCredits;
 }
 
 export interface CheckinLogRow {

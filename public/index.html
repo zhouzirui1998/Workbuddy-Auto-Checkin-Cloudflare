@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#5b5ce2" />
     <title>WorkBuddy 自动签到</title>
     <link rel="stylesheet" href="/styles.css" />
-    <script type="module" src="/app.js?v=1.1.1"></script>
+    <script type="module" src="/app.js?v=1.2.0"></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -55,6 +55,7 @@
             <p class="muted">绑定多个账号，一处查看签到状态。定时任务每天自动执行。</p>
           </div>
           <div class="hero-actions">
+            <button id="credits-all-button" class="button button-ghost" type="button">刷新全部积分</button>
             <button id="checkin-all-button" class="button button-secondary" type="button">全部签到</button>
             <button id="add-account-button" class="button button-primary" type="button">＋ 添加账号</button>
           </div>
@@ -64,6 +65,7 @@
           <article class="stat-card"><span>已绑定账号</span><strong id="account-count">—</strong><small>个</small></article>
           <article class="stat-card"><span>今日已成功</span><strong id="success-count">—</strong><small>个</small></article>
           <article class="stat-card"><span>需要处理</span><strong id="attention-count">—</strong><small>个</small></article>
+          <article class="stat-card"><span>账号剩余积分</span><strong id="credits-total">—</strong><small>积分</small></article>
         </section>
 
         <section class="section-block" aria-labelledby="accounts-heading">

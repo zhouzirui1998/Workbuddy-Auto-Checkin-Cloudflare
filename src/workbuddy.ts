@@ -26,6 +26,9 @@ export function isWorkBuddySuccess(body: WorkBuddyResponse): boolean {
 
 export function isUnauthorized(result: FetchResult): boolean {
   if (result.httpStatus === 401 || result.httpStatus === 403) return true;
+  const code = Number(result.body.code);
+  if (code === 10085) return false;
+  if (code === 401 || code === 403) return true;
   const message = messageOf(result.body).toLowerCase();
   return ["unauthorized", "token expired", "token失效", "登录过期", "请重新登录", "未登录"].some((text) =>
     message.includes(text),
@@ -78,6 +81,32 @@ function authHeaders(credentials: CredentialPayload, account?: AccountRow): Head
     headers.set("X-Tenant-Id", account.enterprise_id);
   }
   return headers;
+}
+
+function creditApiBase(credentials: CredentialPayload, account: AccountRow): string {
+  const domain = (account.domain || credentials.domain).trim().toLowerCase();
+  return domain === "workbuddy.cn" || domain === "www.workbuddy.cn"
+    ? "https://www.workbuddy.cn"
+    : API_BASE;
+}
+
+export async function postCreditResource(
+  credentials: CredentialPayload,
+  account: AccountRow,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<FetchResult> {
+  const base = creditApiBase(credentials, account);
+  const headers = authHeaders(credentials, account);
+  headers.set("Accept", "application/json, text/plain, */*");
+  headers.set("X-Client-Platform", "web");
+  headers.set("Origin", base);
+  headers.set("Referer", `${base}/profile/plans-usage`);
+  return request(`${base}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
 }
 
 function safeAuthUrl(candidate: string | undefined, state: string): string {

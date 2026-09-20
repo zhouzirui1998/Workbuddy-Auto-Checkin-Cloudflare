@@ -5,6 +5,7 @@ import type {
   AccountRow,
   AppSettingsRow,
   CheckinLogRow,
+  CreditSummary,
   CredentialPayload,
   OAuthPayload,
   OAuthSessionRow,
@@ -43,6 +44,14 @@ export function toPublicAccount(row: AccountRow): PublicAccount {
     lastCheckinStatus: row.last_checkin_status,
     lastCheckinMessage: row.last_checkin_message,
     lastCheckinAt: row.last_checkin_at,
+    credits: {
+      totalCapacity: row.credits_total_capacity,
+      totalRemaining: row.credits_total_remaining,
+      soonestExpireAt: row.credits_soonest_expire_at,
+      updatedAt: row.credits_updated_at,
+      error: row.credits_error,
+      errorAt: row.credits_error_at,
+    },
     createdAt: row.created_at,
   };
 }
@@ -183,6 +192,36 @@ export async function acquireCheckinLock(database: D1Database, id: string): Prom
 
 export async function releaseCheckinLock(database: D1Database, id: string): Promise<void> {
   await database.prepare("UPDATE accounts SET checkin_lock_until = NULL WHERE id = ?").bind(id).run();
+}
+
+export async function acquireCreditLock(database: D1Database, id: string): Promise<boolean> {
+  const now = Date.now();
+  const result = await database
+    .prepare(
+      "UPDATE accounts SET checkin_lock_until = ? WHERE id = ? AND (checkin_lock_until IS NULL OR checkin_lock_until < ?)",
+    )
+    .bind(now + 2 * 60 * 1000, id, now)
+    .run();
+  return result.meta.changes === 1;
+}
+
+export async function recordCredits(database: D1Database, id: string, summary: CreditSummary): Promise<void> {
+  const now = Date.now();
+  await database
+    .prepare(
+      "UPDATE accounts SET credits_total_capacity = ?, credits_total_remaining = ?, credits_soonest_expire_at = ?, " +
+        "credits_updated_at = ?, credits_error = NULL, credits_error_at = NULL, updated_at = ? WHERE id = ?",
+    )
+    .bind(summary.totalCapacity, summary.totalRemaining, summary.soonestExpireAt, now, now, id)
+    .run();
+}
+
+export async function recordCreditsError(database: D1Database, id: string, message: string): Promise<void> {
+  const now = Date.now();
+  await database
+    .prepare("UPDATE accounts SET credits_error = ?, credits_error_at = ?, updated_at = ? WHERE id = ?")
+    .bind(message, now, now, id)
+    .run();
 }
 
 export async function recordCheckin(

@@ -11,6 +11,7 @@ import {
   requireAuthentication,
 } from "./auth";
 import { checkinAccount, checkinAllAccounts } from "./checkin";
+import { refreshAccountCredits, refreshAllCredits } from "./credits";
 import { apiError, applyAssetSecurityHeaders, HttpError, json, readJsonObject, requireSameOrigin } from "./http";
 import { completeLoginRequest, createLoginRequest } from "./oauth";
 import {
@@ -27,7 +28,7 @@ import {
   updateCheckinTime,
 } from "./repository";
 
-const VERSION = "1.1.1";
+const VERSION = "1.2.0";
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -156,6 +157,14 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   }
   if (pathname === "/api/checkin/all" && request.method === "POST") {
     return json({ ok: true, results: await checkinAllAccounts(env) });
+  }
+
+  const accountCreditsMatch = /^\/api\/accounts\/([^/]+)\/credits$/u.exec(pathname);
+  if (accountCreditsMatch?.[1] && request.method === "POST") {
+    return json({ ok: true, result: await refreshAccountCredits(env, accountCreditsMatch[1]) });
+  }
+  if (pathname === "/api/credits/all" && request.method === "POST") {
+    return json({ ok: true, results: await refreshAllCredits(env) });
   }
 
   throw new HttpError(404, "接口不存在");

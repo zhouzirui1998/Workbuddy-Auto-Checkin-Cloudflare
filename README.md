@@ -7,6 +7,7 @@
 - 扫码登录，不需要手工复制 Token
 - 同一个管理页绑定多个账号
 - 每日定时签到，后台可直接修改北京时间，也可手动单个或全部签到
+- 读取单个或全部账号的剩余积分、总积分和最近到期时间
 - Access Token 过期前自动刷新
 - 暂停、启用、删除账号
 - 最近 30 天签到记录
@@ -51,6 +52,8 @@ npm run setup:cloudflare
 3. 使用手机扫描页面中的二维码，并在 WorkBuddy 页面确认登录。
 4. 账号出现后，可以点击“立即签到”验证。
 5. 继续点击“添加账号”即可绑定更多账号。
+
+账号卡片中的“刷新积分”只读取当前账号；页面上方的“刷新全部积分”会逐个读取所有账号。积分结果会缓存到 D1，读取失败时仍保留上次成功值，并显示本次错误，不会把失败误显示为 0。
 
 ### 修改签到时间或密码
 
@@ -124,6 +127,10 @@ Cloudflare Cron（每 5 分钟唤醒）
   遍历已启用账号 → 刷新 Token → 查询签到状态 → daily-checkin
                     ↓
              D1 保存结果，管理页展示
+
+管理页手动刷新积分 → summary / paid / free 资源接口
+                    ↓
+       归一化并去重套餐 → D1 缓存积分摘要
 ```
 
 二维码和 OAuth 临时状态同样加密保存在 D1，因此 Worker 即使切换实例也能继续轮询。Cron 每 5 分钟检查一次 D1 中的北京时间设置，到点后用日期锁保证当天只执行一轮。每个账号签到前还会获取一个短时数据库锁，防止“手动签到”和定时任务同时触发重复请求。
@@ -136,6 +143,10 @@ Cloudflare Cron（每 5 分钟唤醒）
 - `POST /v2/plugin/auth/token/refresh`
 - `POST /v2/billing/meter/checkin-activity-status`
 - `POST /v2/billing/meter/daily-checkin`
+- `POST /billing/meter/get-user-resource-summary`
+- `POST /billing/meter/get-user-resource-paid-packages`
+- `POST /billing/meter/get-user-resource-free-packages`
+- `POST /v2/billing/meter/get-user-resource`（兼容回退）
 
 实现依据来自 [changexbc/workbuddy-switch](https://github.com/changexbc/workbuddy-switch) 中的 WorkBuddy 客户端兼容逻辑。本项目只实现中国区签到，因为海外版目前没有相同的签到积分接口。
 

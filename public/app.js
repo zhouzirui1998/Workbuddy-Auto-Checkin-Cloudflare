@@ -67,6 +67,21 @@ function formatTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
+function formatDate(timestamp) {
+  if (!timestamp) return "—";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function formatCredits(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);
+}
+
 function accountName(account) {
   return account.nickname || account.email || `账号 ${account.uid.slice(0, 8)}`;
 }
@@ -91,6 +106,12 @@ function renderAccounts() {
   $("#account-count").textContent = state.accounts.length;
   $("#success-count").textContent = successful;
   $("#attention-count").textContent = attention;
+  const readableCredits = state.accounts
+    .map((account) => account.credits?.totalRemaining)
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
+  $("#credits-total").textContent = readableCredits.length
+    ? formatCredits(readableCredits.reduce((sum, value) => sum + value, 0))
+    : "—";
 
   for (const account of state.accounts) {
     const meta = statusMeta(account, now);
@@ -119,16 +140,40 @@ function renderAccounts() {
     status.className = "account-status";
     const timeLabel = meta.previousResult ? "上次签到：" : "";
     status.textContent = `${meta.message}${account.lastCheckinAt ? ` · ${timeLabel}${formatTime(account.lastCheckinAt)}` : ""}`;
+    const credits = document.createElement("div");
+    credits.className = `account-credits${account.credits?.error ? " account-credits-error" : ""}`;
+    const creditsMain = document.createElement("div");
+    creditsMain.className = "account-credits-main";
+    const creditsLabel = document.createElement("span");
+    creditsLabel.textContent = "剩余积分";
+    const creditsValue = document.createElement("strong");
+    creditsValue.textContent = formatCredits(account.credits?.totalRemaining);
+    creditsMain.append(creditsLabel, creditsValue);
+    const creditsMeta = document.createElement("small");
+    if (account.credits?.updatedAt) {
+      const total = formatCredits(account.credits.totalCapacity);
+      const expiry = account.credits.soonestExpireAt
+        ? ` · 最近到期 ${formatDate(account.credits.soonestExpireAt)}`
+        : "";
+      creditsMeta.textContent = `总计 ${total}${expiry} · 更新于 ${formatTime(account.credits.updatedAt)}`;
+    } else {
+      creditsMeta.textContent = "尚未读取，点击“刷新积分”获取";
+    }
+    if (account.credits?.error) {
+      creditsMeta.textContent = `${creditsMeta.textContent} · 上次失败：${account.credits.error}`;
+    }
+    credits.append(creditsMain, creditsMeta);
     const actions = document.createElement("div");
     actions.className = "account-actions";
     const checkin = createButton("立即签到", "button-secondary", (button) => checkinOne(account.id, button));
     checkin.disabled = !account.enabled;
     actions.append(
       checkin,
+      createButton("刷新积分", "button-ghost", (button) => refreshCreditsOne(account.id, button)),
       createButton(account.enabled ? "暂停" : "启用", "button-ghost", (button) => toggleAccount(account, button)),
       createButton("删除", "button-danger", (button) => removeAccount(account, button)),
     );
-    main.append(titleRow, subtitle, status, actions);
+    main.append(titleRow, subtitle, status, credits, actions);
     card.append(avatar, main);
     grid.append(card);
   }
@@ -254,6 +299,35 @@ async function checkinAll() {
   }
 }
 
+async function refreshCreditsOne(accountId, button) {
+  setButtonLoading(button, true, "读取中…");
+  try {
+    const data = await api(`/api/accounts/${accountId}/credits`, { method: "POST", body: "{}" });
+    toast(data.result.message, data.result.status === "error" ? "error" : "success");
+    await loadDashboard({ quiet: true });
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    setButtonLoading(button, false, "读取中…");
+  }
+}
+
+async function refreshCreditsAll() {
+  const button = $("#credits-all-button");
+  setButtonLoading(button, true, "正在逐个读取…");
+  try {
+    const data = await api("/api/credits/all", { method: "POST", body: "{}" });
+    const succeeded = data.results.filter((result) => result.status === "success").length;
+    const failed = data.results.filter((result) => result.status === "error").length;
+    toast(`积分已更新：${succeeded} 个成功${failed ? `，${failed} 个失败` : ""}`, failed ? "error" : "success");
+    await loadDashboard({ quiet: true });
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    setButtonLoading(button, false, "正在逐个读取…");
+  }
+}
+
 async function toggleAccount(account, button) {
   setButtonLoading(button, true, "保存中…");
   try {
@@ -367,6 +441,7 @@ $("#logout-button").addEventListener("click", async () => {
 });
 $("#refresh-button").addEventListener("click", () => loadDashboard());
 $("#checkin-all-button").addEventListener("click", checkinAll);
+$("#credits-all-button").addEventListener("click", refreshCreditsAll);
 $("#settings-button").addEventListener("click", openSettingsDialog);
 $("#schedule-form").addEventListener("submit", saveSchedule);
 $("#password-form").addEventListener("submit", savePassword);

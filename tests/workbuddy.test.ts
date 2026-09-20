@@ -17,5 +17,6 @@ describe("WorkBuddy response normalization", () => {
     expect(isUnauthorized({ httpStatus: 401, body: {} })).toBe(true);
     expect(isUnauthorized({ httpStatus: 200, body: { message: "登录过期，请重新登录" } })).toBe(true);
     expect(isUnauthorized({ httpStatus: 200, body: { code: 0 } })).toBe(false);
+    expect(isUnauthorized({ httpStatus: 200, body: { code: 10085, message: "token request blocked" } })).toBe(false);
   });
 });

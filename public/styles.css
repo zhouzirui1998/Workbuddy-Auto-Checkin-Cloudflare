@@ -76,7 +76,7 @@ h3 { margin-bottom: 8px; }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
 .hero p:last-child { margin-bottom: 0; }
 .hero-actions { display: flex; gap: 10px; flex: 0 0 auto; }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
 .stat-card { display: grid; grid-template-columns: auto 1fr; align-items: baseline; padding: 21px 23px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 26px rgba(50,52,90,.04); }
 .stat-card span { grid-column: 1 / -1; margin-bottom: 7px; color: var(--muted); font-size: 13px; }
 .stat-card strong { font-size: 30px; letter-spacing: -.04em; }
@@ -101,6 +101,12 @@ h3 { margin-bottom: 8px; }
 .badge-danger { color: var(--danger); background: var(--danger-soft); }
 .badge-muted { color: var(--muted); background: #f0f1f5; }
 .account-status { min-height: 36px; margin: 15px 0 12px; padding: 10px 11px; border-radius: 11px; color: #5c6078; background: #f7f7fa; font-size: 12px; line-height: 1.45; }
+.account-credits { display: grid; gap: 4px; margin: 0 0 12px; padding: 11px; border: 1px solid #e9e9f5; border-radius: 11px; background: #fbfbff; }
+.account-credits-main { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.account-credits-main span { color: var(--muted); font-size: 12px; font-weight: 650; }
+.account-credits-main strong { color: var(--primary); font-size: 19px; letter-spacing: -.02em; }
+.account-credits small { overflow-wrap: anywhere; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.account-credits-error { border-color: #f2d8dc; }
 .account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .table-wrap { position: relative; overflow-x: auto; }
@@ -180,6 +186,7 @@ td { padding: 13px 12px; border-top: 1px solid var(--line); color: #4d5065; }
   .schedule-chip { border-color: #3d3e60; color: #aaaaff; background: #292a44; }
   .button-ghost { background: #22232e; }
   .account-status { color: #b5b7c8; background: #272833; }
+  .account-credits { border-color: #353649; background: #242532; }
   .settings-card { background: #1c1d27; }
   .settings-form label { color: #c4c6d3; }
   td { color: #c5c7d4; }
