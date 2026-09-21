@@ -46,6 +46,19 @@ describe("date-aware account status", () => {
     expect(accountSummary([yesterdayFailure, todayFailure, relogin], now)).toEqual({ successful: 0, attention: 2 });
   });
 
+  it("shows a freshly queried negative status as not checked in today", () => {
+    const notChecked = account({
+      lastCheckinStatus: "not_checked",
+      lastCheckinMessage: "今天没有签到",
+      lastCheckinAt: Date.parse("2026-09-20T16:20:00.000Z"),
+    });
+    expect(statusMeta(notChecked, now)).toMatchObject({
+      label: "今天未签",
+      message: "今天没有签到",
+    });
+    expect(accountSummary([notChecked], now)).toEqual({ successful: 0, attention: 0 });
+  });
+
   it("shows international accounts as unsupported without counting them as failed or unsigned", () => {
     const international = account({
       variant: "ai",

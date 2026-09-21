@@ -96,4 +96,24 @@ describe("Worker API", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ ok: false, error: "请选择中国区或国际版账号" });
   });
+
+  it("refreshes all account data without creating check-in records when there are no accounts", async () => {
+    const login = await exports.default.fetch(
+      new Request(`${ORIGIN}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: ORIGIN },
+        body: JSON.stringify({ password: "local-development-password" }),
+      }),
+    );
+    const cookie = login.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+    const response = await exports.default.fetch(
+      new Request(`${ORIGIN}/api/refresh/all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie, Origin: ORIGIN },
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, credits: [], checkins: [] });
+  });
 });

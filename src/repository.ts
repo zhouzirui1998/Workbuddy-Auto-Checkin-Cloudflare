@@ -7,6 +7,7 @@ import type {
   AccountRow,
   AppSettingsRow,
   CheckinLogRow,
+  CheckinSource,
   CreditSummary,
   CredentialPayload,
   OAuthPayload,
@@ -240,6 +241,7 @@ export async function recordCheckin(
   localDate: string,
   status: string,
   message: string,
+  source: CheckinSource,
 ): Promise<void> {
   const now = Date.now();
   await database.batch([
@@ -249,9 +251,29 @@ export async function recordCheckin(
       )
       .bind(status, message, now, now, id),
     database
-      .prepare("INSERT INTO checkin_logs (account_id, local_date, status, message, created_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(id, localDate, status, message, now),
+      .prepare(
+        "INSERT INTO checkin_logs (account_id, local_date, status, message, source, created_at) VALUES (?, ?, ?, ?, ?, ?) " +
+          "ON CONFLICT(account_id, local_date) DO UPDATE SET status = excluded.status, message = excluded.message, " +
+          "source = excluded.source, created_at = excluded.created_at " +
+          "WHERE checkin_logs.status NOT IN ('success', 'already')",
+      )
+      .bind(id, localDate, status, message, source, now),
   ]);
+}
+
+export async function updateCheckinSnapshot(
+  database: D1Database,
+  id: string,
+  status: string,
+  message: string,
+): Promise<void> {
+  const now = Date.now();
+  await database
+    .prepare(
+      "UPDATE accounts SET last_checkin_status = ?, last_checkin_message = ?, last_checkin_at = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(status, message, now, now, id)
+    .run();
 }
 
 export async function markNeedsRelogin(database: D1Database, id: string, reason: string): Promise<void> {
@@ -264,7 +286,7 @@ export async function markNeedsRelogin(database: D1Database, id: string, reason:
 export async function listRecentLogs(database: D1Database, limit = 50): Promise<CheckinLogRow[]> {
   const result = await database
     .prepare(
-      "SELECT l.id, l.account_id, COALESCE(a.nickname, a.email, a.uid) AS account_name, l.local_date, l.status, l.message, l.created_at " +
+      "SELECT l.id, l.account_id, COALESCE(a.nickname, a.email, a.uid) AS account_name, l.local_date, l.status, l.message, l.source, l.created_at " +
         "FROM checkin_logs l LEFT JOIN accounts a ON a.id = l.account_id ORDER BY l.created_at DESC LIMIT ?",
     )
     .bind(limit)

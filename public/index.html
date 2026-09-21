@@ -6,8 +6,8 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#5b5ce2" />
     <title>WorkBuddy 自动签到</title>
-    <link rel="stylesheet" href="/styles.css" />
-    <script type="module" src="/app.js?v=1.3.0"></script>
+    <link rel="stylesheet" href="/styles.css?v=1.3.4-ui2" />
+    <script type="module" src="/app.js?v=1.3.4-ui2"></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -71,7 +71,7 @@
         <section class="section-block" aria-labelledby="accounts-heading">
           <div class="section-heading">
             <div><h2 id="accounts-heading">账号</h2><p class="muted">中国区支持自动签到；国际版签到活动尚未开放。</p></div>
-            <button id="refresh-button" class="button button-ghost" type="button">刷新</button>
+            <button id="refresh-button" class="button button-ghost" type="button" aria-label="刷新所有账号的积分和签到状态" title="刷新所有账号的积分和签到状态">刷新</button>
           </div>
           <div id="accounts-loading" class="loading-panel"><span class="spinner"></span><span>正在加载账号…</span></div>
           <div id="accounts-empty" class="empty-panel" hidden>
@@ -87,7 +87,7 @@
           <div class="section-heading"><div><h2 id="logs-heading">最近记录</h2><p class="muted">保留最近 30 天的签到结果。</p></div></div>
           <div class="table-wrap" role="region" tabindex="0" aria-label="签到记录表，可横向滚动">
             <table>
-              <thead><tr><th scope="col">账号</th><th scope="col">日期</th><th scope="col">结果</th><th scope="col">说明</th><th scope="col">时间</th></tr></thead>
+              <thead><tr><th scope="col">账号</th><th scope="col">日期</th><th scope="col">方式</th><th scope="col">结果</th><th scope="col">说明</th><th scope="col">时间</th></tr></thead>
               <tbody id="logs-body"></tbody>
             </table>
             <div id="logs-empty" class="table-empty">暂无签到记录</div>
@@ -134,7 +134,7 @@
         <section class="settings-card" aria-labelledby="schedule-settings-title">
           <div>
             <h3 id="schedule-settings-title">自动签到时间</h3>
-            <p class="muted">按北京时间执行，实际触发可能晚几分钟。</p>
+            <p class="muted">按北京时间执行，Cloudflare 调度可能有少量延迟。</p>
           </div>
           <form id="schedule-form" class="settings-form settings-form-inline">
             <label for="checkin-time">签到时间</label>
@@ -150,11 +150,26 @@
           </div>
           <form id="password-form" class="settings-form">
             <label for="current-password">当前密码</label>
-            <input id="current-password" type="password" autocomplete="current-password" required />
+            <div class="settings-password-field">
+              <input id="current-password" type="password" autocomplete="current-password" required />
+              <button class="password-visibility-button" type="button" data-password-target="current-password" aria-label="显示当前密码" aria-pressed="false">
+                <img src="/icons/eye.svg" alt="" aria-hidden="true" />
+              </button>
+            </div>
             <label for="new-password">新密码</label>
-            <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+            <div class="settings-password-field">
+              <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+              <button class="password-visibility-button" type="button" data-password-target="new-password" aria-label="显示新密码" aria-pressed="false">
+                <img src="/icons/eye.svg" alt="" aria-hidden="true" />
+              </button>
+            </div>
             <label for="confirm-password">确认新密码</label>
-            <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+            <div class="settings-password-field">
+              <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+              <button class="password-visibility-button" type="button" data-password-target="confirm-password" aria-label="显示确认密码" aria-pressed="false">
+                <img src="/icons/eye.svg" alt="" aria-hidden="true" />
+              </button>
+            </div>
             <p id="password-error" class="form-error" role="alert" hidden></p>
             <button id="save-password-button" class="button button-primary" type="submit">修改密码</button>
           </form>

@@ -10,7 +10,7 @@ import {
   recordLoginFailure,
   requireAuthentication,
 } from "./auth";
-import { checkinAccount, checkinAllAccounts } from "./checkin";
+import { checkinAccount, checkinAllAccounts, refreshAllCheckinStatuses } from "./checkin";
 import { refreshAccountCredits, refreshAllCredits } from "./credits";
 import { apiError, applyAssetSecurityHeaders, HttpError, json, readJsonObject, requireSameOrigin } from "./http";
 import { completeLoginRequest, createLoginRequest } from "./oauth";
@@ -29,7 +29,7 @@ import {
 } from "./repository";
 import type { AccountVariant } from "./variant";
 
-const VERSION = "1.3.3";
+const VERSION = "1.3.4";
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -67,6 +67,7 @@ async function handleDashboard(env: Env): Promise<Response> {
       localDate: log.local_date,
       status: log.status,
       message: log.message,
+      source: log.source,
       createdAt: log.created_at,
     })),
   });
@@ -177,6 +178,11 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/credits/all" && request.method === "POST") {
     return json({ ok: true, results: await refreshAllCredits(env) });
   }
+  if (pathname === "/api/refresh/all" && request.method === "POST") {
+    const credits = await refreshAllCredits(env);
+    const checkins = await refreshAllCheckinStatuses(env);
+    return json({ ok: true, credits, checkins });
+  }
 
   throw new HttpError(404, "接口不存在");
 }
@@ -199,7 +205,7 @@ async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> 
     JSON.stringify({ message: "scheduled_checkin_started", checkinTime: claim.checkinTime, localDate: claim.localDate }),
   );
   try {
-    const results = await checkinAllAccounts(env);
+    const results = await checkinAllAccounts(env, "automatic");
     await cleanupExpiredData(env.DB);
     if (results.length === 0) {
       await finishScheduledRun(env.DB, claim.localDate, claim.checkinTime, false);

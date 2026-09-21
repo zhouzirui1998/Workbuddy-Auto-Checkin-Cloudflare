@@ -1,5 +1,6 @@
 import {
   acquireCheckinLock,
+  acquireCreditLock,
   getAccount,
   getCredentials,
   listAccounts,
@@ -7,8 +8,9 @@ import {
   recordCheckin,
   releaseCheckinLock,
   saveCredentials,
+  updateCheckinSnapshot,
 } from "./repository";
-import type { AccountRow, CheckinResult, CredentialPayload } from "./types";
+import type { AccountRow, CheckinResult, CheckinSource, CheckinStatusRefreshResult, CredentialPayload } from "./types";
 import {
   fetchCheckinStatus,
   hasCheckedInToday,
@@ -47,7 +49,10 @@ async function ensureFreshCredentials(
   return refreshed;
 }
 
-async function performCheckin(env: Env, account: AccountRow): Promise<CheckinResult> {
+async function readCheckinStatus(
+  env: Env,
+  account: AccountRow,
+): Promise<{ checked: boolean; credentials: CredentialPayload }> {
   let credentials = await getCredentials(account, env.TOKEN_ENCRYPTION_KEY);
   credentials = await ensureFreshCredentials(env, account, credentials);
 
@@ -60,7 +65,14 @@ async function performCheckin(env: Env, account: AccountRow): Promise<CheckinRes
   if (isUnauthorized(statusResult)) throw new Error("登录状态已失效，请重新登录");
   if (!isWorkBuddySuccess(statusResult.body)) throw new Error(workBuddyMessage(statusResult));
 
-  if (hasCheckedInToday(statusResult)) {
+  return { checked: hasCheckedInToday(statusResult), credentials };
+}
+
+async function performCheckin(env: Env, account: AccountRow): Promise<CheckinResult> {
+  const status = await readCheckinStatus(env, account);
+  let credentials = status.credentials;
+
+  if (status.checked) {
     return { accountId: account.id, status: "already", message: "今天已经签到" };
   }
 
@@ -81,7 +93,11 @@ async function performCheckin(env: Env, account: AccountRow): Promise<CheckinRes
   throw new Error(message);
 }
 
-export async function checkinAccount(env: Env, accountId: string): Promise<CheckinResult> {
+export async function checkinAccount(
+  env: Env,
+  accountId: string,
+  source: CheckinSource = "manual",
+): Promise<CheckinResult> {
   const account = await getAccount(env.DB, accountId);
   if (account.variant === "ai") {
     return { accountId: account.id, status: "unsupported", message: "国际版签到活动暂未开放" };
@@ -92,7 +108,7 @@ export async function checkinAccount(env: Env, accountId: string): Promise<Check
   }
   try {
     const result = await performCheckin(env, account);
-    await recordCheckin(env.DB, account.id, date, result.status, result.message);
+    await recordCheckin(env.DB, account.id, date, result.status, result.message, source);
     console.log(JSON.stringify({ message: "checkin_completed", accountId: account.id, status: result.status }));
     return result;
   } catch (error) {
@@ -100,7 +116,7 @@ export async function checkinAccount(env: Env, accountId: string): Promise<Check
     if (/登录|token|凭据|credential|unauthorized|decrypt/iu.test(message)) {
       await markNeedsRelogin(env.DB, account.id, "登录状态失效，请重新登录");
     }
-    await recordCheckin(env.DB, account.id, date, "error", message);
+    await recordCheckin(env.DB, account.id, date, "error", message, source);
     console.warn(JSON.stringify({ message: "checkin_failed", accountId: account.id, error: message }));
     return { accountId: account.id, status: "error", message };
   } finally {
@@ -108,11 +124,47 @@ export async function checkinAccount(env: Env, accountId: string): Promise<Check
   }
 }
 
-export async function checkinAllAccounts(env: Env): Promise<CheckinResult[]> {
+export async function checkinAllAccounts(env: Env, source: CheckinSource = "manual"): Promise<CheckinResult[]> {
   const accounts = (await listAccounts(env.DB)).filter((account) => account.enabled === 1 && account.variant === "cn");
   const results: CheckinResult[] = [];
   for (const account of accounts) {
-    results.push(await checkinAccount(env, account.id));
+    results.push(await checkinAccount(env, account.id, source));
   }
+  return results;
+}
+
+export async function refreshAccountCheckinStatus(
+  env: Env,
+  accountId: string,
+): Promise<CheckinStatusRefreshResult> {
+  const account = await getAccount(env.DB, accountId);
+  if (account.variant === "ai") {
+    return { accountId: account.id, status: "unsupported", message: "国际版签到活动暂未开放" };
+  }
+  if (!(await acquireCreditLock(env.DB, account.id))) {
+    return { accountId: account.id, status: "busy", message: "该账号正在处理其他操作，请稍后重试" };
+  }
+  try {
+    const { checked } = await readCheckinStatus(env, account);
+    const status = checked ? "checked" : "not_checked";
+    const message = checked ? "今天已经签到" : "今天没有签到";
+    await updateCheckinSnapshot(env.DB, account.id, checked ? "already" : "not_checked", message);
+    return { accountId: account.id, status, message };
+  } catch (error) {
+    const message = errorMessage(error);
+    if (/登录|token|凭据|credential|unauthorized|decrypt/iu.test(message)) {
+      await markNeedsRelogin(env.DB, account.id, "登录状态失效，请重新登录");
+    }
+    console.warn(JSON.stringify({ message: "checkin_status_refresh_failed", accountId: account.id, error: message }));
+    return { accountId: account.id, status: "error", message };
+  } finally {
+    await releaseCheckinLock(env.DB, account.id);
+  }
+}
+
+export async function refreshAllCheckinStatuses(env: Env): Promise<CheckinStatusRefreshResult[]> {
+  const accounts = (await listAccounts(env.DB)).filter((account) => account.variant === "cn");
+  const results: CheckinStatusRefreshResult[] = [];
+  for (const account of accounts) results.push(await refreshAccountCheckinStatus(env, account.id));
   return results;
 }

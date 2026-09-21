@@ -1,4 +1,4 @@
-import { accountSummary, beijingDate, statusMeta } from "./account-status.js";
+import { accountSummary, beijingDate, statusMeta } from "./account-status.js?v=1.3.4-ui2";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -200,7 +200,8 @@ function renderLogs() {
   for (const log of state.logs) {
     const row = document.createElement("tr");
     const statusLabel = { success: "成功", already: "已签到", error: "失败", busy: "处理中" }[log.status] || log.status;
-    for (const value of [log.accountName || "已删除账号", log.localDate, statusLabel, log.message, formatTime(log.createdAt)]) {
+    const sourceLabel = { manual: "人工签到", automatic: "自动签到", legacy: "历史记录" }[log.source] || "历史记录";
+    for (const value of [log.accountName || "已删除账号", log.localDate, sourceLabel, statusLabel, log.message, formatTime(log.createdAt)]) {
       const cell = document.createElement("td");
       cell.textContent = value;
       row.append(cell);
@@ -231,8 +232,19 @@ async function loadDashboard({ quiet = false } = {}) {
 function openSettingsDialog() {
   $("#checkin-time").value = state.checkinTime;
   $("#password-form").reset();
+  document.querySelectorAll("[data-password-target]").forEach((button) => setPasswordVisibility(button, false));
   $("#password-error").hidden = true;
   $("#settings-dialog").showModal();
+}
+
+function setPasswordVisibility(button, visible) {
+  const input = document.getElementById(button.dataset.passwordTarget || "");
+  if (!input) return;
+  input.type = visible ? "text" : "password";
+  button.setAttribute("aria-pressed", String(visible));
+  button.setAttribute("aria-label", `${visible ? "隐藏" : "显示"}${input.labels?.[0]?.textContent || "密码"}`);
+  const icon = button.querySelector("img");
+  if (icon) icon.src = visible ? "/icons/eye-off.svg" : "/icons/eye.svg";
 }
 
 async function saveSchedule(event) {
@@ -339,6 +351,32 @@ async function refreshCreditsAll() {
     toast(error.message, "error");
   } finally {
     setButtonLoading(button, false, "正在逐个读取…");
+  }
+}
+
+async function refreshAllAccountData() {
+  const button = $("#refresh-button");
+  setButtonLoading(button, true, "刷新中…");
+  try {
+    const data = await api("/api/refresh/all", { method: "POST", body: "{}" });
+    const creditSucceeded = data.credits.filter((result) => result.status === "success").length;
+    const creditFailed = data.credits.filter((result) => result.status === "error" || result.status === "busy").length;
+    const checkinSucceeded = data.checkins.filter((result) => ["checked", "not_checked"].includes(result.status)).length;
+    const checkinFailed = data.checkins.filter((result) => result.status === "error" || result.status === "busy").length;
+    await loadDashboard({ quiet: true });
+    if (data.credits.length === 0 && data.checkins.length === 0) {
+      toast("暂无账号可刷新");
+      return;
+    }
+    const failed = creditFailed + checkinFailed;
+    toast(
+      `刷新完成：${creditSucceeded} 个积分，${checkinSucceeded} 个签到状态${failed ? `，${failed} 项失败` : ""}`,
+      failed ? "error" : "success",
+    );
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    setButtonLoading(button, false, "刷新中…");
   }
 }
 
@@ -512,12 +550,15 @@ $("#logout-button").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch { /* Cookie is cleared locally by expiry or next auth check. */ }
   showLogin();
 });
-$("#refresh-button").addEventListener("click", () => loadDashboard());
+$("#refresh-button").addEventListener("click", refreshAllAccountData);
 $("#checkin-all-button").addEventListener("click", checkinAll);
 $("#credits-all-button").addEventListener("click", refreshCreditsAll);
 $("#settings-button").addEventListener("click", openSettingsDialog);
 $("#schedule-form").addEventListener("submit", saveSchedule);
 $("#password-form").addEventListener("submit", savePassword);
+document.querySelectorAll("[data-password-target]").forEach((button) => {
+  button.addEventListener("click", () => setPasswordVisibility(button, button.getAttribute("aria-pressed") !== "true"));
+});
 $("#add-account-button").addEventListener("click", openQrDialog);
 $("#empty-add-button").addEventListener("click", openQrDialog);
 $("#variant-cn-button").addEventListener("click", () => {

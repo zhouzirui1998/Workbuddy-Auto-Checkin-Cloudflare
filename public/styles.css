@@ -149,6 +149,12 @@ td { padding: 13px 12px; border-top: 1px solid var(--line); color: #4d5065; }
 .settings-form label { color: #55586d; font-size: 12px; font-weight: 700; }
 .settings-form input { width: 100%; height: 43px; padding: 0 12px; color: var(--text); border: 1px solid var(--line); border-radius: 11px; outline: none; background: var(--surface-solid); }
 .settings-form input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91,92,226,.11); }
+.settings-password-field { position: relative; }
+.settings-password-field input { padding-right: 45px; }
+.password-visibility-button { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 35px; height: 35px; padding: 0; border: 0; border-radius: 9px; background: transparent; cursor: pointer; }
+.password-visibility-button:hover { background: var(--primary-soft); }
+.password-visibility-button:focus-visible { outline: 3px solid rgba(91,92,226,.25); outline-offset: 1px; }
+.password-visibility-button img { width: 19px; height: 19px; opacity: .62; }
 .settings-form .button { margin-top: 5px; justify-self: start; }
 .settings-form-inline { grid-template-columns: minmax(120px, 1fr) auto; align-items: end; }
 .settings-form-inline label { grid-column: 1 / -1; }
@@ -171,7 +177,7 @@ td { padding: 13px 12px; border-top: 1px solid var(--line); color: #4d5065; }
   .accounts-grid { grid-template-columns: 1fr; }
   .section-block { padding: 18px; border-radius: 18px; }
   .table-wrap { margin: 0 -18px -18px; }
-  table { min-width: 660px; }
+  table { min-width: 760px; }
   th:first-child, td:first-child { padding-left: 18px; }
 }
 
@@ -209,5 +215,6 @@ td { padding: 13px 12px; border-top: 1px solid var(--line); color: #4d5065; }
   .oauth-note { color: #e2c277; background: #3a321f; }
   .settings-card { background: #1c1d27; }
   .settings-form label { color: #c4c6d3; }
+  .password-visibility-button img { filter: invert(1); opacity: .72; }
   td { color: #c5c7d4; }
 }

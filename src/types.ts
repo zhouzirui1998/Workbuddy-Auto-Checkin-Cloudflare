@@ -92,6 +92,14 @@ export interface CreditRefreshResult {
   credits?: PublicCredits;
 }
 
+export type CheckinSource = "manual" | "automatic" | "legacy";
+
+export interface CheckinStatusRefreshResult {
+  accountId: string;
+  status: "checked" | "not_checked" | "error" | "busy" | "unsupported";
+  message: string;
+}
+
 export interface CheckinLogRow {
   id: number;
   account_id: string;
@@ -99,6 +107,7 @@ export interface CheckinLogRow {
   local_date: string;
   status: string;
   message: string;
+  source: CheckinSource;
   created_at: number;
 }
 

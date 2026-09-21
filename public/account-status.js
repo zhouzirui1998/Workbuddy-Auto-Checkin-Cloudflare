@@ -98,6 +98,9 @@ export function statusMeta(account, now = Date.now()) {
       previousResult: false,
     };
   }
+  if (account.lastCheckinStatus === "not_checked") {
+    return { label: "今天未签", className: "badge-warning", message: "今天没有签到", previousResult: false };
+  }
   return { label: "今天未签", className: "badge-warning", message: "今天没有签到", previousResult: false };
 }
 
