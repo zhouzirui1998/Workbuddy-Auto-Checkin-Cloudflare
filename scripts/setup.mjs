@@ -92,7 +92,7 @@ try {
   deploySettings.main = "../src/index.ts";
   deploySettings.d1_databases[0].migrations_dir = "../migrations";
   deploySettings.assets.directory = "../public";
-  deploySettings.triggers.crons = ["*/5 * * * *"];
+  deploySettings.triggers.crons = ["* * * * *"];
   deploySettings.vars.DEFAULT_CHECKIN_TIME ??= "08:10";
   writeFileSync(deployConfig, `${JSON.stringify(deploySettings, null, 2)}\n`, "utf8");
 
