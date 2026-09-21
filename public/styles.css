@@ -76,6 +76,9 @@ h3 { margin-bottom: 8px; }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
 .hero p:last-child { margin-bottom: 0; }
 .hero-actions { display: flex; gap: 10px; flex: 0 0 auto; }
+.deployment-note { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; padding: 13px 17px; border: 1px solid #dfe0f7; border-radius: 13px; color: #4d5274; background: #f3f4ff; font-size: 12px; line-height: 1.6; }
+.deployment-note strong { flex: 0 0 auto; color: #5557b5; font-size: 12px; }
+.deployment-note p { margin: 0; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
 .stat-card { display: grid; grid-template-columns: auto 1fr; align-items: baseline; padding: 21px 23px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 26px rgba(50,52,90,.04); }
 .stat-card span { grid-column: 1 / -1; margin-bottom: 7px; color: var(--muted); font-size: 13px; }
@@ -173,6 +176,7 @@ td { padding: 13px 12px; border-top: 1px solid var(--line); color: #4d5065; }
   .content { width: min(calc(100% - 28px), 1160px); padding-top: 35px; }
   .hero { align-items: stretch; flex-direction: column; }
   .hero-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .deployment-note { align-items: flex-start; flex-direction: column; gap: 3px; }
   .stats { grid-template-columns: 1fr; gap: 10px; }
   .accounts-grid { grid-template-columns: 1fr; }
   .section-block { padding: 18px; border-radius: 18px; }
@@ -204,6 +208,8 @@ td { padding: 13px 12px; border-top: 1px solid var(--line); color: #4d5065; }
   .password-row input, .qr-stage { background: #1c1d27; }
   .topbar { background: rgba(20,21,29,.84); }
   .schedule-chip { border-color: #3d3e60; color: #aaaaff; background: #292a44; }
+  .deployment-note { border-color: #3d3e60; color: #b8bbd1; background: #292a44; }
+  .deployment-note strong { color: #aaaaff; }
   .button-ghost { background: #22232e; }
   .account-status { color: #b5b7c8; background: #272833; }
   .account-credits { border-color: #353649; background: #242532; }
