@@ -20,6 +20,12 @@
 
 ## 一键部署
 
+### 从 GitHub Releases 下载（推荐）
+
+普通用户建议在仓库右侧进入 **Releases**，下载最新的 `workbuddy-auto-checkin-v*.zip`。解压到一个普通文件夹后，Windows 用户直接双击 `setup.bat`，不要在压缩包内直接运行。
+
+Releases 中的发行包已经排除 `.git`、`.deploy`、`.dev.vars`、`node_modules`、缓存和日志，仅包含部署所需源码、MIT `LICENSE`、中文使用说明与安装脚本。GitHub 自动提供的 “Source code” 压缩包也能使用，但面向普通用户时优先下载项目额外上传的发行包。
+
 准备条件：
 
 1. 一个 Cloudflare 账号。
