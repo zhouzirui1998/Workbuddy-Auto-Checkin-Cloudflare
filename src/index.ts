@@ -29,7 +29,7 @@ import {
 } from "./repository";
 import type { AccountVariant } from "./variant";
 
-const VERSION = "1.3.1";
+const VERSION = "1.3.2";
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -96,7 +96,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
     const body = await readJsonObject(request);
     const checkinTime = typeof body.checkinTime === "string" ? body.checkinTime : "";
     if (!TIME_PATTERN.test(checkinTime)) throw new HttpError(400, "请输入有效的签到时间");
-    await updateCheckinTime(env.DB, checkinTime);
+    await updateCheckinTime(env.DB, checkinTime, env.APP_TIMEZONE);
     return json({ ok: true, checkinTime, scheduleLabel: `每天 ${checkinTime}（北京时间）` });
   }
   if (pathname === "/api/settings/password" && request.method === "PATCH") {
@@ -201,7 +201,19 @@ async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> 
   try {
     const results = await checkinAllAccounts(env);
     await cleanupExpiredData(env.DB);
-    await finishScheduledRun(env.DB, claim.localDate, true);
+    if (results.length === 0) {
+      await finishScheduledRun(env.DB, claim.localDate, claim.checkinTime, false);
+      console.log(
+        JSON.stringify({
+          message: "scheduled_checkin_deferred",
+          checkinTime: claim.checkinTime,
+          localDate: claim.localDate,
+          reason: "no_eligible_accounts",
+        }),
+      );
+      return;
+    }
+    await finishScheduledRun(env.DB, claim.localDate, claim.checkinTime, true);
     console.log(
       JSON.stringify({
         message: "scheduled_checkin_finished",
@@ -210,7 +222,7 @@ async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> 
       }),
     );
   } catch (error) {
-    await finishScheduledRun(env.DB, claim.localDate, false);
+    await finishScheduledRun(env.DB, claim.localDate, claim.checkinTime, false);
     throw error;
   }
 }

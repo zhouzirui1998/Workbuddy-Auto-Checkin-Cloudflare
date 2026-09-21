@@ -301,10 +301,27 @@ export async function getAppSettings(
   };
 }
 
-export async function updateCheckinTime(database: D1Database, checkinTime: string): Promise<void> {
+export async function updateCheckinTime(
+  database: D1Database,
+  checkinTime: string,
+  timeZone: string,
+  timestamp = Date.now(),
+): Promise<void> {
+  const local = localDateAndTime(timestamp, timeZone);
+  if (checkinTime > local.time) {
+    await database
+      .prepare(
+        "UPDATE app_settings SET checkin_time = ?, " +
+          "last_scheduled_date = CASE WHEN last_scheduled_date = ? THEN NULL ELSE last_scheduled_date END, " +
+          "scheduled_lock_until = NULL, updated_at = ? WHERE id = 1",
+      )
+      .bind(checkinTime, local.date, timestamp)
+      .run();
+    return;
+  }
   await database
     .prepare("UPDATE app_settings SET checkin_time = ?, updated_at = ? WHERE id = 1")
-    .bind(checkinTime, Date.now())
+    .bind(checkinTime, timestamp)
     .run();
 }
 
@@ -348,18 +365,24 @@ export async function claimScheduledRun(
   return { claimed: result.meta.changes === 1, localDate: local.date, checkinTime: settings.checkinTime };
 }
 
-export async function finishScheduledRun(database: D1Database, localDate: string, succeeded: boolean): Promise<void> {
+export async function finishScheduledRun(
+  database: D1Database,
+  localDate: string,
+  checkinTime: string,
+  succeeded: boolean,
+): Promise<void> {
   if (succeeded) {
     await database
       .prepare(
-        "UPDATE app_settings SET last_scheduled_date = ?, scheduled_lock_until = NULL, updated_at = ? WHERE id = 1",
+        "UPDATE app_settings SET last_scheduled_date = ?, scheduled_lock_until = NULL, updated_at = ? " +
+          "WHERE id = 1 AND checkin_time = ?",
       )
-      .bind(localDate, Date.now())
+      .bind(localDate, Date.now(), checkinTime)
       .run();
     return;
   }
   await database
-    .prepare("UPDATE app_settings SET scheduled_lock_until = NULL, updated_at = ? WHERE id = 1")
-    .bind(Date.now())
+    .prepare("UPDATE app_settings SET scheduled_lock_until = NULL, updated_at = ? WHERE id = 1 AND checkin_time = ?")
+    .bind(Date.now(), checkinTime)
     .run();
 }
