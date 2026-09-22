@@ -1,4 +1,4 @@
-# WorkBuddy 自动签到
+# Workbuddy-Auto-Checkin-Cloudflare
 
 一个可自行部署到 Cloudflare 的 WorkBuddy 多账号管理工具。中国区账号支持扫码登录、每日自动签到和积分查询；WorkBuddy 国际版支持浏览器 OAuth 登录和积分查询。
 
@@ -35,7 +35,7 @@
 
 ### 从 GitHub Releases 下载（推荐）
 
-普通用户进入 [最新发行版](https://github.com/zhouzirui1998/workbuddy-auto-checkin/releases/latest)，下载 `workbuddy-auto-checkin-v*.zip`。解压到一个普通文件夹，不要在压缩包内直接运行 BAT 文件。发行页同时提供 `.sha256.txt` 校验值；下载后可用 `Get-FileHash 文件名 -Algorithm SHA256` 核对。
+普通用户进入 [最新发行版](https://github.com/zhouzirui1998/Workbuddy-Auto-Checkin-Cloudflare/releases/latest)，下载 `workbuddy-auto-checkin-v*.zip`。解压到一个普通文件夹，不要在压缩包内直接运行 BAT 文件。发行页同时提供 `.sha256.txt` 校验值；下载后可用 `Get-FileHash 文件名 -Algorithm SHA256` 核对。
 
 Releases 中的发行包已经排除 `.git`、`.deploy`、`.dev.vars`、`node_modules`、缓存和日志，仅包含部署所需源码、MIT `LICENSE`、中文使用说明与安装脚本。GitHub 自动提供的 “Source code” 压缩包也能使用，但面向普通用户时优先下载项目额外上传的发行包。
 
