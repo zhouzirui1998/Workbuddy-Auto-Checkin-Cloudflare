@@ -4,6 +4,7 @@ import {
   getAccount,
   getCredentials,
   listAccounts,
+  listScheduledCheckinAccounts,
   markNeedsRelogin,
   recordCheckin,
   releaseCheckinLock,
@@ -131,6 +132,28 @@ export async function checkinAllAccounts(env: Env, source: CheckinSource = "manu
     results.push(await checkinAccount(env, account.id, source));
   }
   return results;
+}
+
+export async function checkinPendingAccounts(
+  env: Env,
+  localDate: string,
+): Promise<{ eligibleCount: number; results: CheckinResult[] }> {
+  const { eligibleCount, pendingAccounts } = await listScheduledCheckinAccounts(env.DB, localDate);
+  const results: CheckinResult[] = [];
+  for (const account of pendingAccounts) {
+    if (account.needsRelogin) {
+      results.push({ accountId: account.id, status: "error", message: "登录状态失效，请重新登录" });
+      continue;
+    }
+    try {
+      results.push(await checkinAccount(env, account.id, "automatic"));
+    } catch (error) {
+      const message = errorMessage(error);
+      console.error(JSON.stringify({ message: "scheduled_account_checkin_failed", accountId: account.id, error: message }));
+      results.push({ accountId: account.id, status: "error", message });
+    }
+  }
+  return { eligibleCount, results };
 }
 
 export async function refreshAccountCheckinStatus(

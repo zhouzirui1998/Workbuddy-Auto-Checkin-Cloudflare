@@ -70,6 +70,27 @@ export async function listAccounts(database: D1Database): Promise<AccountRow[]> 
   return result.results;
 }
 
+export async function listScheduledCheckinAccounts(
+  database: D1Database,
+  localDate: string,
+): Promise<{ eligibleCount: number; pendingAccounts: { id: string; needsRelogin: boolean }[] }> {
+  const result = await database
+    .prepare(
+      "SELECT a.id, a.needs_relogin, EXISTS (" +
+        "SELECT 1 FROM checkin_logs l WHERE l.account_id = a.id AND l.local_date = ? " +
+        "AND l.status IN ('success', 'already')) AS checked_in_today " +
+        "FROM accounts a WHERE a.enabled = 1 AND a.variant = 'cn' ORDER BY a.created_at ASC",
+    )
+    .bind(localDate)
+    .all<{ id: string; needs_relogin: number; checked_in_today: number }>();
+  return {
+    eligibleCount: result.results.length,
+    pendingAccounts: result.results
+      .filter((account) => account.checked_in_today !== 1)
+      .map((account) => ({ id: account.id, needsRelogin: account.needs_relogin === 1 })),
+  };
+}
+
 export async function getAccount(database: D1Database, id: string): Promise<AccountRow> {
   const row = await database.prepare("SELECT * FROM accounts WHERE id = ?").bind(id).first<AccountRow>();
   if (!row) throw new HttpError(404, "账号不存在");
@@ -379,10 +400,13 @@ export async function claimScheduledRun(
   const result = await database
     .prepare(
       "UPDATE app_settings SET scheduled_lock_until = ?, updated_at = ? WHERE id = 1 AND checkin_time = ? " +
-        "AND (last_scheduled_date IS NULL OR last_scheduled_date <> ?) " +
+        "AND ((last_scheduled_date IS NULL OR last_scheduled_date <> ?) OR EXISTS (" +
+        "SELECT 1 FROM accounts a WHERE a.enabled = 1 AND a.variant = 'cn' AND NOT EXISTS (" +
+        "SELECT 1 FROM checkin_logs l WHERE l.account_id = a.id AND l.local_date = ? " +
+        "AND l.status IN ('success', 'already')))) " +
         "AND (scheduled_lock_until IS NULL OR scheduled_lock_until < ?)",
     )
-    .bind(now + 30 * 60 * 1000, now, settings.checkinTime, local.date, now)
+    .bind(now + 30 * 60 * 1000, now, settings.checkinTime, local.date, local.date, now)
     .run();
   return { claimed: result.meta.changes === 1, localDate: local.date, checkinTime: settings.checkinTime };
 }

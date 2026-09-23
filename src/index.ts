@@ -10,7 +10,7 @@ import {
   recordLoginFailure,
   requireAuthentication,
 } from "./auth";
-import { checkinAccount, checkinAllAccounts, refreshAllCheckinStatuses } from "./checkin";
+import { checkinAccount, checkinAllAccounts, checkinPendingAccounts, refreshAllCheckinStatuses } from "./checkin";
 import { refreshAccountCredits, refreshAllCredits } from "./credits";
 import { apiError, applyAssetSecurityHeaders, HttpError, json, readJsonObject, requireSameOrigin } from "./http";
 import { completeLoginRequest, createLoginRequest } from "./oauth";
@@ -29,7 +29,7 @@ import {
 } from "./repository";
 import type { AccountVariant } from "./variant";
 
-const VERSION = "1.3.5";
+const VERSION = "1.3.6";
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -205,9 +205,9 @@ async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> 
     JSON.stringify({ message: "scheduled_checkin_started", checkinTime: claim.checkinTime, localDate: claim.localDate }),
   );
   try {
-    const results = await checkinAllAccounts(env, "automatic");
+    const { eligibleCount, results } = await checkinPendingAccounts(env, claim.localDate);
     await cleanupExpiredData(env.DB);
-    if (results.length === 0) {
+    if (eligibleCount === 0) {
       await finishScheduledRun(env.DB, claim.localDate, claim.checkinTime, false);
       console.log(
         JSON.stringify({
@@ -219,12 +219,15 @@ async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> 
       );
       return;
     }
-    await finishScheduledRun(env.DB, claim.localDate, claim.checkinTime, true);
+    const succeeded = results.every((result) => result.status === "success" || result.status === "already");
+    await finishScheduledRun(env.DB, claim.localDate, claim.checkinTime, succeeded);
     console.log(
       JSON.stringify({
-        message: "scheduled_checkin_finished",
-        total: results.length,
+        message: succeeded ? "scheduled_checkin_finished" : "scheduled_checkin_retry_pending",
+        eligible: eligibleCount,
+        attempted: results.length,
         success: results.filter((result) => result.status === "success" || result.status === "already").length,
+        pending: results.filter((result) => result.status !== "success" && result.status !== "already").length,
       }),
     );
   } catch (error) {
