@@ -1,6 +1,6 @@
 {
   "name": "workbuddy-auto-checkin",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "private": true,
   "description": "可自托管的 WorkBuddy 中国区自动签到与国际版积分管理 Cloudflare Worker",
   "type": "module",

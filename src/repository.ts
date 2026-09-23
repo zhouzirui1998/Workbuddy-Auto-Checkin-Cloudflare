@@ -428,7 +428,10 @@ export async function finishScheduledRun(
     return;
   }
   await database
-    .prepare("UPDATE app_settings SET scheduled_lock_until = NULL, updated_at = ? WHERE id = 1 AND checkin_time = ?")
-    .bind(Date.now(), checkinTime)
+    .prepare(
+      "UPDATE app_settings SET last_scheduled_date = CASE WHEN last_scheduled_date = ? THEN NULL ELSE last_scheduled_date END, " +
+        "scheduled_lock_until = NULL, updated_at = ? WHERE id = 1 AND checkin_time = ?",
+    )
+    .bind(localDate, Date.now(), checkinTime)
     .run();
 }

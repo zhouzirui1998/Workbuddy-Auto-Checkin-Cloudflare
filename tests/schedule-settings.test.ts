@@ -132,6 +132,10 @@ describe("configurable automatic check-in schedule", () => {
     const retry = await claimScheduledRun(env.DB, "Asia/Shanghai", "08:10", scheduledTime + 60_000);
     expect(retry.claimed).toBe(true);
     await finishScheduledRun(env.DB, date, "08:10", false);
+    const afterFailure = await env.DB.prepare("SELECT last_scheduled_date FROM app_settings WHERE id = 1").first<{
+      last_scheduled_date: string | null;
+    }>();
+    expect(afterFailure?.last_scheduled_date).toBeNull();
 
     await recordCheckin(env.DB, second, date, "success", "OK", "automatic");
     await expect(listScheduledCheckinAccounts(env.DB, date)).resolves.toEqual({
