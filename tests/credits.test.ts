@@ -3,6 +3,7 @@ import { normalizeLegacyCreditSummary, normalizeNewCreditSummary } from "../src/
 import type { FetchResult } from "../src/workbuddy";
 
 const NOW = Date.UTC(2026, 8, 21, 0, 0, 0);
+const DAY = 24 * 60 * 60 * 1000;
 
 function result(body: FetchResult["body"]): FetchResult {
   return { httpStatus: 200, body };
@@ -65,6 +66,11 @@ describe("WorkBuddy credit normalization", () => {
       totalCapacity: 270,
       totalRemaining: 200,
       soonestExpireAt: NOW + 2 * 24 * 60 * 60 * 1000,
+      expiryBuckets: [
+        { remaining: 150, expiresAt: NOW + 2 * 24 * 60 * 60 * 1000 },
+        { remaining: 40, expiresAt: NOW + 5 * 24 * 60 * 60 * 1000 },
+        { remaining: 10, expiresAt: NOW + 10 * 24 * 60 * 60 * 1000 },
+      ],
     });
   });
 
@@ -89,6 +95,39 @@ describe("WorkBuddy credit normalization", () => {
       totalCapacity: 88.5,
       totalRemaining: 61.25,
       soonestExpireAt: Date.UTC(2026, 8, 22, 16, 0, 0),
+      expiryBuckets: [{ remaining: 61.25, expiresAt: Date.UTC(2026, 8, 22, 16, 0, 0) }],
+    });
+  });
+
+  it("splits slice periods, combines the same expiry, and keeps unknown expiry separate", () => {
+    const legacy = result({
+      code: 0,
+      data: {
+        Accounts: [
+          {
+            PackageCode: "gift",
+            CycleCapacitySizePrecise: 900,
+            CycleCapacityRemainPrecise: 600,
+            SlicePeriodUsageDetails: [
+              { SlicePeriodCapacitySizePrecise: 100, SlicePeriodCapacityRemainPrecise: 80, SlicePeriodEndTime: NOW + DAY },
+              { SlicePeriodCapacitySizePrecise: 200, SlicePeriodCapacityRemainPrecise: 120, SlicePeriodEndTime: NOW + 2 * DAY },
+            ],
+          },
+          { CycleCapacitySizePrecise: 50, CycleCapacityRemainPrecise: 40, CycleEndTime: NOW + DAY },
+          { CycleCapacitySizePrecise: 10, CycleCapacityRemainPrecise: 8 },
+          { CycleCapacitySizePrecise: 30, CycleCapacityRemainPrecise: 0, CycleEndTime: NOW + DAY },
+        ],
+      },
+    });
+    expect(normalizeLegacyCreditSummary(legacy, NOW)).toEqual({
+      totalCapacity: 390,
+      totalRemaining: 248,
+      soonestExpireAt: NOW + DAY,
+      expiryBuckets: [
+        { remaining: 120, expiresAt: NOW + DAY },
+        { remaining: 120, expiresAt: NOW + 2 * DAY },
+        { remaining: 8, expiresAt: null },
+      ],
     });
   });
 

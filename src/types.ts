@@ -45,6 +45,7 @@ export interface AccountRow {
   credits_total_capacity: number | null;
   credits_total_remaining: number | null;
   credits_soonest_expire_at: number | null;
+  credits_expiry_buckets: string | null;
   credits_updated_at: number | null;
   credits_error: string | null;
   credits_error_at: number | null;
@@ -74,15 +75,22 @@ export interface PublicCredits {
   totalCapacity: number | null;
   totalRemaining: number | null;
   soonestExpireAt: number | null;
+  expiryBuckets: CreditExpiryBucket[] | null;
   updatedAt: number | null;
   error: string | null;
   errorAt: number | null;
+}
+
+export interface CreditExpiryBucket {
+  remaining: number;
+  expiresAt: number | null;
 }
 
 export interface CreditSummary {
   totalCapacity: number;
   totalRemaining: number;
   soonestExpireAt: number | null;
+  expiryBuckets: CreditExpiryBucket[];
 }
 
 export interface CreditRefreshResult {

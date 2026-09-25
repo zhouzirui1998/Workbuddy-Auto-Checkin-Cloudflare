@@ -8,6 +8,7 @@ import type {
   AppSettingsRow,
   CheckinLogRow,
   CheckinSource,
+  CreditExpiryBucket,
   CreditSummary,
   CredentialPayload,
   OAuthPayload,
@@ -26,6 +27,25 @@ function isCredentialPayload(value: unknown): value is CredentialPayload {
     (record.expiresAt === undefined || typeof record.expiresAt === "number") &&
     (record.refreshExpiresAt === undefined || typeof record.refreshExpiresAt === "number")
   );
+}
+
+function parseCreditExpiryBuckets(value: string | null): CreditExpiryBucket[] | null {
+  if (value === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return null;
+    const buckets: CreditExpiryBucket[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") return null;
+      const bucket = item as Record<string, unknown>;
+      if (typeof bucket.remaining !== "number" || !Number.isFinite(bucket.remaining) || bucket.remaining <= 0) return null;
+      if (bucket.expiresAt !== null && (typeof bucket.expiresAt !== "number" || !Number.isFinite(bucket.expiresAt))) return null;
+      buckets.push({ remaining: bucket.remaining, expiresAt: bucket.expiresAt });
+    }
+    return buckets;
+  } catch {
+    return null;
+  }
 }
 
 function isOAuthPayload(value: unknown): value is OAuthPayload {
@@ -57,6 +77,7 @@ export function toPublicAccount(row: AccountRow): PublicAccount {
       totalCapacity: row.credits_total_capacity,
       totalRemaining: row.credits_total_remaining,
       soonestExpireAt: row.credits_soonest_expire_at,
+      expiryBuckets: parseCreditExpiryBuckets(row.credits_expiry_buckets),
       updatedAt: row.credits_updated_at,
       error: row.credits_error,
       errorAt: row.credits_error_at,
@@ -242,9 +263,9 @@ export async function recordCredits(database: D1Database, id: string, summary: C
   await database
     .prepare(
       "UPDATE accounts SET credits_total_capacity = ?, credits_total_remaining = ?, credits_soonest_expire_at = ?, " +
-        "credits_updated_at = ?, credits_error = NULL, credits_error_at = NULL, updated_at = ? WHERE id = ?",
+        "credits_expiry_buckets = ?, credits_updated_at = ?, credits_error = NULL, credits_error_at = NULL, updated_at = ? WHERE id = ?",
     )
-    .bind(summary.totalCapacity, summary.totalRemaining, summary.soonestExpireAt, now, now, id)
+    .bind(summary.totalCapacity, summary.totalRemaining, summary.soonestExpireAt, JSON.stringify(summary.expiryBuckets), now, now, id)
     .run();
 }
 

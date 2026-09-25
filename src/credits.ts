@@ -123,38 +123,36 @@ function timestampValue(value: unknown): number | undefined {
 
 function resolveExpireAt(raw: Record<string, unknown>, now: number): number | null {
   const deduction = timestampValue(
-    firstValue(raw, ["DeductionEndTime", "deductionEndTime", "ExpiredTime", "expiredTime"]),
+    firstValue(raw, ["DeductionEndTime", "deductionEndTime", "ExpiredTime", "expiredTime", "SlicePeriodEndTime", "slicePeriodEndTime", "PackageEndTime", "EndTime", "ExpireTime", "ExpirationTime", "ValidEndTime", "EndAt", "ExpireAt"]),
   );
   const cycle = timestampValue(firstValue(raw, ["CycleEndTime", "cycleEndTime"]));
   let expireAt = deduction;
   if (deduction !== undefined && cycle !== undefined && deduction - cycle > 365 * DAY_MS) expireAt = cycle;
   if (expireAt === undefined) expireAt = cycle;
-  if (expireAt === undefined || expireAt - now > 730 * DAY_MS) return null;
+  if (expireAt === undefined || expireAt < now - 365 * DAY_MS || expireAt > Date.UTC(2100, 0, 1)) return null;
   return expireAt;
 }
 
-function normalizeResource(value: unknown, now: number): NormalizedResource | null {
+function normalizeResource(value: unknown, now: number, detail?: Record<string, unknown>): NormalizedResource | null {
   const raw = asRecord(value);
   if (!raw) return null;
-  const slices = firstValue(raw, ["SlicePeriodUsageDetails", "slicePeriodUsageDetails"]);
-  const slice = Array.isArray(slices) ? asRecord(slices[0]) : null;
   const totalKeys = [
+    "SlicePeriodCapacitySizePrecise",
+    "SlicePeriodCapacitySize",
     "CycleCapacitySizePrecise",
     "CycleCapacitySize",
     "CycleTotalCapacity",
     "CapacitySizePrecise",
     "CapacitySize",
-    "SlicePeriodCapacitySizePrecise",
-    "SlicePeriodCapacitySize",
   ];
   const remainingKeys = [
+    "SlicePeriodCapacityRemainPrecise",
+    "SlicePeriodCapacityRemain",
     "CycleCapacityRemainPrecise",
     "CycleCapacityRemain",
     "CycleRemainCapacity",
     "CapacityRemainPrecise",
     "CapacityRemain",
-    "SlicePeriodCapacityRemainPrecise",
-    "SlicePeriodCapacityRemain",
   ];
   const usedKeys = [
     "CycleCapacityUsedPrecise",
@@ -165,9 +163,10 @@ function normalizeResource(value: unknown, now: number): NormalizedResource | nu
     "SlicePeriodCapacityUsedPrecise",
     "SlicePeriodCapacityUsed",
   ];
-  const rawTotal = firstNumber(raw, totalKeys) ?? (slice ? firstNumber(slice, totalKeys) : undefined);
-  const rawRemaining = firstNumber(raw, remainingKeys) ?? (slice ? firstNumber(slice, remainingKeys) : undefined);
-  const rawUsed = firstNumber(raw, usedKeys) ?? (slice ? firstNumber(slice, usedKeys) : undefined);
+  const amounts = detail ?? raw;
+  const rawTotal = firstNumber(amounts, totalKeys);
+  const rawRemaining = firstNumber(amounts, remainingKeys);
+  const rawUsed = firstNumber(amounts, usedKeys);
   const total = Math.max(0, rawTotal ?? (rawRemaining !== undefined && rawUsed !== undefined ? rawRemaining + rawUsed : rawRemaining ?? rawUsed ?? 0));
   const remaining = Math.max(0, rawRemaining ?? total - (rawUsed ?? 0));
   const packageCode = firstValue(raw, ["PackageCode", "packageCode"]);
@@ -175,8 +174,25 @@ function normalizeResource(value: unknown, now: number): NormalizedResource | nu
     packageCode: typeof packageCode === "string" && packageCode ? packageCode : null,
     total,
     remaining,
-    expireAt: resolveExpireAt(raw, now),
+    expireAt: detail ? resolveExpireAt(detail, now) ?? resolveExpireAt(raw, now) : resolveExpireAt(raw, now),
   };
+}
+
+function normalizeResources(value: unknown, now: number): NormalizedResource[] {
+  const raw = asRecord(value);
+  if (!raw) return [];
+  const slices = firstValue(raw, ["SlicePeriodUsageDetails", "slicePeriodUsageDetails"]);
+  if (Array.isArray(slices) && slices.length) {
+    const details = slices
+      .map(asRecord)
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .filter((item) => Object.keys(item).some((key) => /(?:Capacity|Remain|Used|Quota|Balance)/iu.test(key)))
+      .map((item) => normalizeResource(raw, now, item))
+      .filter((item): item is NormalizedResource => item !== null);
+    if (details.length) return details;
+  }
+  const resource = normalizeResource(raw, now);
+  return resource ? [resource] : [];
 }
 
 function valueAtPath(value: unknown, path: readonly string[]): unknown {
@@ -215,13 +231,18 @@ function isCreditSuccess(body: WorkBuddyResponse): boolean {
 function summarize(resources: NormalizedResource[]): CreditSummary {
   const totalCapacity = resources.reduce((sum, resource) => sum + resource.total, 0);
   const totalRemaining = resources.reduce((sum, resource) => sum + resource.remaining, 0);
-  const expiryDates = resources
-    .filter((resource) => resource.remaining > 0 && resource.expireAt !== null)
-    .map((resource) => resource.expireAt as number);
+  const buckets = new Map<number | null, number>();
+  for (const resource of resources) {
+    if (resource.remaining <= 0) continue;
+    buckets.set(resource.expireAt, (buckets.get(resource.expireAt) ?? 0) + resource.remaining);
+  }
+  const expiryBuckets = [...buckets].map(([expiresAt, remaining]) => ({ remaining, expiresAt }))
+    .sort((left, right) => (left.expiresAt ?? Infinity) - (right.expiresAt ?? Infinity));
   return {
     totalCapacity,
     totalRemaining,
-    soonestExpireAt: expiryDates.length ? Math.min(...expiryDates) : null,
+    soonestExpireAt: expiryBuckets.find((bucket) => bucket.expiresAt !== null)?.expiresAt ?? null,
+    expiryBuckets,
   };
 }
 
@@ -231,13 +252,10 @@ export function normalizeNewCreditSummary(responses: NewResponses, now = Date.no
   const freeItems = isCreditSuccess(responses.free.body) ? resourceArray(responses.free.body, "Accounts") : null;
   if (summaryItems === null && paidItems === null && freeItems === null) return null;
 
-  const details = [...(paidItems ?? []), ...(freeItems ?? [])]
-    .map((item) => normalizeResource(item, now))
-    .filter((item): item is NormalizedResource => item !== null);
+  const details = [...(paidItems ?? []), ...(freeItems ?? [])].flatMap((item) => normalizeResources(item, now));
   const detailCodes = new Set(details.map((item) => item.packageCode).filter((code): code is string => code !== null));
   const summary = (summaryItems ?? [])
-    .map((item) => normalizeResource(item, now))
-    .filter((item): item is NormalizedResource => item !== null)
+    .flatMap((item) => normalizeResources(item, now))
     .filter((item) => item.packageCode === null || !detailCodes.has(item.packageCode));
   return summarize([...details, ...summary]);
 }
@@ -246,9 +264,7 @@ export function normalizeLegacyCreditSummary(result: FetchResult, now = Date.now
   if (!isCreditSuccess(result.body)) return null;
   const items = resourceArray(result.body, "Accounts");
   if (items === null) return null;
-  return summarize(
-    items.map((item) => normalizeResource(item, now)).filter((item): item is NormalizedResource => item !== null),
-  );
+  return summarize(items.flatMap((item) => normalizeResources(item, now)));
 }
 
 function beijingRange(now: number): { start: string; end: string } {

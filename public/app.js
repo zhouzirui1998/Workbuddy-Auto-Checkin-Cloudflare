@@ -106,6 +106,52 @@ function createButton(label, className, handler) {
   return button;
 }
 
+function renderCreditExpiry(account) {
+  const container = document.createElement("div");
+  container.className = "account-credit-expiry";
+  const buckets = account.credits?.expiryBuckets;
+  if (!Array.isArray(buckets) || buckets.length === 0) {
+    const note = document.createElement("span");
+    note.className = "account-credit-expiry-note";
+    note.textContent = account.credits?.totalRemaining === 0
+      ? "暂无可用积分"
+      : account.credits?.updatedAt
+        ? "点击“刷新积分”查看各批次到期时间"
+        : "积分到期分布待读取";
+    container.append(note);
+    return container;
+  }
+
+  const heading = document.createElement("span");
+  heading.className = "account-credit-expiry-heading";
+  heading.textContent = "积分到期分布";
+  const bar = document.createElement("div");
+  bar.className = "account-credit-bar";
+  bar.setAttribute("role", "img");
+  bar.setAttribute("aria-label", `共 ${buckets.length} 个到期批次，按剩余积分比例显示`);
+  for (const bucket of buckets) {
+    const segment = document.createElement("span");
+    segment.className = `account-credit-segment${bucket.expiresAt === null ? " account-credit-segment-unknown" : ""}`;
+    segment.style.flexGrow = String(bucket.remaining);
+    segment.title = `${formatCredits(bucket.remaining)} 积分 · ${bucket.expiresAt === null ? "到期时间未知" : `${formatExpiry(bucket.expiresAt)}（北京时间）`}`;
+    bar.append(segment);
+  }
+  const details = document.createElement("details");
+  details.className = "account-credit-details";
+  const summary = document.createElement("summary");
+  summary.textContent = `查看 ${buckets.length} 个到期批次`;
+  const list = document.createElement("ol");
+  for (const bucket of buckets) {
+    const item = document.createElement("li");
+    const expiry = bucket.expiresAt === null ? "到期时间未知" : `${formatExpiry(bucket.expiresAt)}（北京时间）`;
+    item.textContent = `${formatCredits(bucket.remaining)} 积分 · ${expiry}`;
+    list.append(item);
+  }
+  details.append(summary, list);
+  container.append(heading, bar, details);
+  return container;
+}
+
 function renderAccounts() {
   const now = Date.now();
   state.renderedBeijingDate = beijingDate(now);
@@ -166,15 +212,6 @@ function renderAccounts() {
     const creditsValue = document.createElement("strong");
     creditsValue.textContent = formatCredits(account.credits?.totalRemaining);
     creditsMain.append(creditsLabel, creditsValue);
-    const expiry = document.createElement("div");
-    expiry.className = "account-credits-expiry";
-    const expiryLabel = document.createElement("span");
-    expiryLabel.textContent = "最近积分到期时间";
-    const expiryValue = document.createElement("span");
-    expiryValue.textContent = account.credits?.soonestExpireAt
-      ? `${formatExpiry(account.credits.soonestExpireAt)}（北京时间）`
-      : account.credits?.updatedAt ? "官方暂未提供" : "待读取";
-    expiry.append(expiryLabel, expiryValue);
     const creditsMeta = document.createElement("small");
     if (account.credits?.updatedAt) {
       const total = formatCredits(account.credits.totalCapacity);
@@ -185,7 +222,7 @@ function renderAccounts() {
     if (account.credits?.error) {
       creditsMeta.textContent = `${creditsMeta.textContent} · 上次失败：${account.credits.error}`;
     }
-    credits.append(creditsMain, expiry, creditsMeta);
+    credits.append(creditsMain, renderCreditExpiry(account), creditsMeta);
     const actions = document.createElement("div");
     actions.className = "account-actions";
     if (account.supportsCheckin) {

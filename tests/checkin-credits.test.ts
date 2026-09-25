@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkinAccount } from "../src/checkin";
 import { encryptJson } from "../src/crypto";
-import { getAccount } from "../src/repository";
+import { getAccount, toPublicAccount } from "../src/repository";
 
 async function addAccount(): Promise<string> {
   const id = crypto.randomUUID();
@@ -68,6 +68,8 @@ describe("credit refresh after check-in", () => {
     const account = await getAccount(env.DB, accountId);
     expect(account.credits_total_remaining).toBe(25);
     expect(account.credits_soonest_expire_at).toBe(expiresAt);
+    expect(JSON.parse(account.credits_expiry_buckets ?? "null")).toEqual([{ remaining: 25, expiresAt }]);
+    expect(toPublicAccount(account).credits.expiryBuckets).toEqual([{ remaining: 25, expiresAt }]);
     const log = await env.DB.prepare("SELECT status, source FROM checkin_logs WHERE account_id = ?").bind(accountId).first<{
       status: string;
       source: string;
