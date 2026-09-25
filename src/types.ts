@@ -115,6 +115,7 @@ export interface CheckinResult {
   accountId: string;
   status: "success" | "already" | "error" | "busy" | "unsupported";
   message: string;
+  creditRefresh?: CreditRefreshResult;
 }
 
 export interface AppSettingsRow {

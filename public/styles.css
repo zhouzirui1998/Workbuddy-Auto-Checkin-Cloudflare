@@ -112,6 +112,9 @@ h3 { margin-bottom: 8px; }
 .account-credits-main { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .account-credits-main span { color: var(--muted); font-size: 12px; font-weight: 650; }
 .account-credits-main strong { color: var(--primary); font-size: 19px; letter-spacing: -.02em; }
+.account-credits-expiry { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; padding-top: 7px; border-top: 1px solid #e9e9f5; font-size: 12px; line-height: 1.5; }
+.account-credits-expiry span:first-child { color: var(--muted); }
+.account-credits-expiry span:last-child { color: var(--text); font-weight: 650; }
 .account-credits small { overflow-wrap: anywhere; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .account-credits-error { border-color: #f2d8dc; }
 .account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -213,6 +216,7 @@ td { padding: 13px 12px; border-top: 1px solid var(--line); color: #4d5065; }
   .button-ghost { background: #22232e; }
   .account-status { color: #b5b7c8; background: #272833; }
   .account-credits { border-color: #353649; background: #242532; }
+  .account-credits-expiry { border-color: #353649; }
   .account-version { border-color: #424453; background: #292a35; }
   .account-version-international { border-color: #28594f; color: #7fd2c0; background: #193b35; }
   .variant-tabs { background: #191a23; }

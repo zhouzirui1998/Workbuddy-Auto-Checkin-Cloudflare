@@ -29,7 +29,7 @@ import {
 } from "./repository";
 import type { AccountVariant } from "./variant";
 
-const VERSION = "1.3.7";
+const VERSION = "1.3.8";
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -228,6 +228,7 @@ async function scheduledHandler(env: Env, scheduledTime: number): Promise<void> 
         attempted: results.length,
         success: results.filter((result) => result.status === "success" || result.status === "already").length,
         pending: results.filter((result) => result.status !== "success" && result.status !== "already").length,
+        creditRefreshFailures: results.filter((result) => result.creditRefresh && result.creditRefresh.status !== "success").length,
       }),
     );
   } catch (error) {

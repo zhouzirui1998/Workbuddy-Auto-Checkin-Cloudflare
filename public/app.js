@@ -12,6 +12,9 @@ const state = {
   oauthAuthUrl: "",
   loginVariant: "cn",
   loginRequestSerial: 0,
+  dashboardRequestSerial: 0,
+  dashboardSignature: "",
+  dashboardPollInFlight: false,
   toastTimer: null,
 };
 
@@ -47,6 +50,8 @@ function toast(message, type = "success") {
 }
 
 function showLogin() {
+  state.dashboardRequestSerial += 1;
+  state.dashboardSignature = "";
   stopQrPolling();
   if ($("#qr-dialog").open) $("#qr-dialog").close();
   if ($("#settings-dialog").open) $("#settings-dialog").close();
@@ -71,13 +76,15 @@ function formatTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
-function formatDate(timestamp) {
+function formatExpiry(timestamp) {
   if (!timestamp) return "—";
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(new Date(timestamp));
 }
 
@@ -159,20 +166,26 @@ function renderAccounts() {
     const creditsValue = document.createElement("strong");
     creditsValue.textContent = formatCredits(account.credits?.totalRemaining);
     creditsMain.append(creditsLabel, creditsValue);
+    const expiry = document.createElement("div");
+    expiry.className = "account-credits-expiry";
+    const expiryLabel = document.createElement("span");
+    expiryLabel.textContent = "最近积分到期时间";
+    const expiryValue = document.createElement("span");
+    expiryValue.textContent = account.credits?.soonestExpireAt
+      ? `${formatExpiry(account.credits.soonestExpireAt)}（北京时间）`
+      : account.credits?.updatedAt ? "官方暂未提供" : "待读取";
+    expiry.append(expiryLabel, expiryValue);
     const creditsMeta = document.createElement("small");
     if (account.credits?.updatedAt) {
       const total = formatCredits(account.credits.totalCapacity);
-      const expiry = account.credits.soonestExpireAt
-        ? ` · 最近到期 ${formatDate(account.credits.soonestExpireAt)}`
-        : "";
-      creditsMeta.textContent = `总计 ${total}${expiry} · 更新于 ${formatTime(account.credits.updatedAt)}`;
+      creditsMeta.textContent = `总计 ${total} · 更新于 ${formatTime(account.credits.updatedAt)}`;
     } else {
       creditsMeta.textContent = "尚未读取，点击“刷新积分”获取";
     }
     if (account.credits?.error) {
       creditsMeta.textContent = `${creditsMeta.textContent} · 上次失败：${account.credits.error}`;
     }
-    credits.append(creditsMain, creditsMeta);
+    credits.append(creditsMain, expiry, creditsMeta);
     const actions = document.createElement("div");
     actions.className = "account-actions";
     if (account.supportsCheckin) {
@@ -210,20 +223,26 @@ function renderLogs() {
   }
 }
 
-async function loadDashboard({ quiet = false } = {}) {
+async function loadDashboard({ quiet = false, silent = false } = {}) {
   const refresh = $("#refresh-button");
+  const serial = ++state.dashboardRequestSerial;
   if (!quiet) setButtonLoading(refresh, true, "刷新中…");
   try {
-    const data = await api("/api/dashboard");
+    const data = await api("/api/dashboard", { signal: AbortSignal.timeout(15_000) });
+    if (serial !== state.dashboardRequestSerial || views.app.hidden) return;
+    const signature = JSON.stringify([data.accounts, data.logs, data.checkinTime, data.scheduleLabel]);
+    if (signature === state.dashboardSignature) return;
     state.accounts = data.accounts;
     state.logs = data.logs;
     state.checkinTime = data.checkinTime;
     $("#schedule-chip").textContent = data.scheduleLabel;
     renderAccounts();
     renderLogs();
+    state.dashboardSignature = signature;
   } catch (error) {
+    if (serial !== state.dashboardRequestSerial || views.app.hidden) return;
     $("#accounts-loading").hidden = true;
-    toast(error.message, "error");
+    if (!silent) toast(error.message, "error");
   } finally {
     if (!quiet) setButtonLoading(refresh, false, "刷新中…");
   }
@@ -300,7 +319,11 @@ async function checkinOne(accountId, button) {
   setButtonLoading(button, true, "签到中…");
   try {
     const data = await api(`/api/accounts/${accountId}/checkin`, { method: "POST", body: "{}" });
-    toast(data.result.message, data.result.status === "error" ? "error" : "success");
+    const creditFailed = data.result.creditRefresh && data.result.creditRefresh.status !== "success";
+    const message = creditFailed
+      ? `${data.result.message}，但积分自动刷新失败，请点“刷新积分”重试`
+      : data.result.creditRefresh?.status === "success" ? `${data.result.message}，积分已更新` : data.result.message;
+    toast(message, data.result.status === "error" || data.result.status === "busy" || creditFailed ? "error" : "success");
     await loadDashboard({ quiet: true });
   } catch (error) {
     toast(error.message, "error");
@@ -315,8 +338,12 @@ async function checkinAll() {
   try {
     const data = await api("/api/checkin/all", { method: "POST", body: "{}" });
     const ok = data.results.filter((result) => result.status === "success" || result.status === "already").length;
-    const failed = data.results.filter((result) => result.status === "error").length;
-    toast(`已完成：${ok} 个成功${failed ? `，${failed} 个失败` : ""}`, failed ? "error" : "success");
+    const failed = data.results.filter((result) => result.status === "error" || result.status === "busy").length;
+    const creditFailed = data.results.filter((result) => result.creditRefresh && result.creditRefresh.status !== "success").length;
+    toast(
+      `已完成：${ok} 个签到成功${failed ? `，${failed} 个签到失败` : ""}${creditFailed ? `，${creditFailed} 个积分刷新失败` : ""}`,
+      failed || creditFailed ? "error" : "success",
+    );
     await loadDashboard({ quiet: true });
   } catch (error) {
     toast(error.message, "error");
@@ -579,8 +606,22 @@ function refreshDateSensitiveStatus() {
   if (!views.app.hidden && state.renderedBeijingDate !== beijingDate(Date.now())) renderAccounts();
 }
 
+async function refreshVisibleDashboard() {
+  if (views.app.hidden || document.hidden || state.dashboardPollInFlight) return;
+  state.dashboardPollInFlight = true;
+  try {
+    await loadDashboard({ quiet: true, silent: true });
+  } finally {
+    state.dashboardPollInFlight = false;
+  }
+}
+
 setInterval(refreshDateSensitiveStatus, 30_000);
-document.addEventListener("visibilitychange", refreshDateSensitiveStatus);
+setInterval(() => { void refreshVisibleDashboard(); }, 60_000);
+document.addEventListener("visibilitychange", () => {
+  refreshDateSensitiveStatus();
+  if (!document.hidden) void refreshVisibleDashboard();
+});
 
 (async function initialize() {
   try {

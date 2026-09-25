@@ -11,6 +11,7 @@ import {
   saveCredentials,
   updateCheckinSnapshot,
 } from "./repository";
+import { refreshAccountCredits } from "./credits";
 import type { AccountRow, CheckinResult, CheckinSource, CheckinStatusRefreshResult, CredentialPayload } from "./types";
 import {
   fetchCheckinStatus,
@@ -94,19 +95,8 @@ async function performCheckin(env: Env, account: AccountRow): Promise<CheckinRes
   throw new Error(message);
 }
 
-export async function checkinAccount(
-  env: Env,
-  accountId: string,
-  source: CheckinSource = "manual",
-): Promise<CheckinResult> {
-  const account = await getAccount(env.DB, accountId);
-  if (account.variant === "ai") {
-    return { accountId: account.id, status: "unsupported", message: "国际版签到活动暂未开放" };
-  }
+async function runCheckinUnderLock(env: Env, account: AccountRow, source: CheckinSource): Promise<CheckinResult> {
   const date = localDate(env.APP_TIMEZONE);
-  if (!(await acquireCheckinLock(env.DB, account.id))) {
-    return { accountId: account.id, status: "busy", message: "该账号正在签到，请稍后刷新" };
-  }
   try {
     const result = await performCheckin(env, account);
     await recordCheckin(env.DB, account.id, date, result.status, result.message, source);
@@ -120,8 +110,39 @@ export async function checkinAccount(
     await recordCheckin(env.DB, account.id, date, "error", message, source);
     console.warn(JSON.stringify({ message: "checkin_failed", accountId: account.id, error: message }));
     return { accountId: account.id, status: "error", message };
+  }
+}
+
+export async function checkinAccount(
+  env: Env,
+  accountId: string,
+  source: CheckinSource = "manual",
+): Promise<CheckinResult> {
+  const account = await getAccount(env.DB, accountId);
+  if (account.variant === "ai") {
+    return { accountId: account.id, status: "unsupported", message: "国际版签到活动暂未开放" };
+  }
+  if (!(await acquireCheckinLock(env.DB, account.id))) {
+    return { accountId: account.id, status: "busy", message: "该账号正在签到，请稍后刷新" };
+  }
+  let result: CheckinResult;
+  try {
+    result = await runCheckinUnderLock(env, account, source);
   } finally {
     await releaseCheckinLock(env.DB, account.id);
+  }
+  if (result.status !== "success" && result.status !== "already") return result;
+
+  try {
+    const creditRefresh = await refreshAccountCredits(env, account.id);
+    return { ...result, creditRefresh };
+  } catch (error) {
+    const message = errorMessage(error);
+    console.warn(JSON.stringify({ message: "checkin_credit_refresh_failed", accountId: account.id, error: message }));
+    return {
+      ...result,
+      creditRefresh: { accountId: account.id, status: "error", message: "积分自动刷新失败，请稍后手动刷新" },
+    };
   }
 }
 
